@@ -1,0 +1,62 @@
+{
+  "name": "dsh-client-ui-session-cost",
+  "version": "1.0.0",
+  "description": "Per-segment Session cost in the DeepSeek Harness composer statistics strip, priced from the harness model catalog.",
+  "license": "MIT",
+  "author": "GalileoNio <30980467+GalileoNio@users.noreply.github.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GalileoNio/dsh-cost.git"
+  },
+  "homepage": "https://github.com/GalileoNio/dsh-cost#readme",
+  "bugs": {
+    "url": "https://github.com/GalileoNio/dsh-cost/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "bundle",
+    "cost",
+    "pricing",
+    "tokens"
+  ],
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "~3.18.4",
+    "@earendil-works/pi-ai": "^0.87.1",
+    "zod": "^4.4.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node test/presets.test.mjs && node test/projection.test.mjs && node test/bundle.test.mjs && node test/config.test.mjs"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/presets.js",
+    "lib/projection.js",
+    "cordis.patch.yml"
+  ]
+}

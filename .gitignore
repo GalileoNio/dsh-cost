@@ -1,0 +1,14 @@
+# Installed dependencies; the plugin ships only lib/ and its patch.
+node_modules/
+
+# Package-manager lockfiles are per-install, not part of the plugin.
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Harness runtime state, if this repo is ever cloned into a profile directory.
+logs/
+.plugin-manager/
+
+*.log
+.DS_Store

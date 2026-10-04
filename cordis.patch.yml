@@ -1,0 +1,10 @@
+# The dsh-client-ui-session-cost bundle patch: one row over the profile root.
+#
+# No config here on purpose. Prices are preset from the harness's own model
+# catalog (41 providers, ~1495 models, USD per 1M tokens, plus the DeepSeek
+# official routes in CNY), so the override table starts empty and stays small.
+# Maintain it in Settings → Plugins → Session cost, which writes back to this
+# file by entry id; or set `config:` here directly.
+- insert:
+    - id: session-cost
+      name: dsh-client-ui-session-cost

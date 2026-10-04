@@ -14,12 +14,15 @@
   },
   "keywords": [
     "dsh",
+    "dsh-plugin",
     "deepseek-harness",
+    "cordis",
     "plugin",
     "bundle",
     "cost",
     "pricing",
-    "tokens"
+    "tokens",
+    "token-usage"
   ],
   "type": "module",
   "main": "lib/index.js",

@@ -275,7 +275,7 @@ node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/fx.test.mjs           # 29 checks: the reference rates behind the converted figure
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 170 checks: the browser half, the tray and its settings page
+node test/bundle.test.mjs       # 177 checks: the browser half, the tray and its settings page
 node test/config.test.mjs       # 81 checks: the schema, the live wiring and the billing card
 ```
 
@@ -294,7 +294,8 @@ stub only React and the DOM, so a passing run means the shipped code works.
   and DOM and drives the real components through a stateful mount: per-segment
   arithmetic, mixed currencies, disclosed incompleteness, the icon's intrinsic
   size and single stroke weight in both mount contexts, and the settings page end to end — the seats it
-  claims, the cards it draws, and the fact that each edit writes only the field
+  claims, the page it draws — fields stacked in the shell's own settings-form
+    metrics, the two advanced sections folded — and the fact that each edit writes only the field
   it changed. Its `ConfigForm` stub is a class whose methods read `this.store`,
   so the detached method references React hands to `useSyncExternalStore` fail
   the suite exactly as they fail in the browser, and it folds accepted writes back

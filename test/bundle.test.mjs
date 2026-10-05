@@ -175,6 +175,38 @@ const primitives = {
 	},
 	useDismissOnOutsidePointer() {
 		primitives.dismissals += 1;
+	},
+	// The shell's settings components, as host elements the suite can drive. The
+	// real ones cannot load here — they import the Host tree's React, which a bare
+	// Node run has no copy of — so the probe covers real React and this covers this
+	// bundle's own wiring and structure.
+	Switch({ checked, onChange, label, disabled }) {
+		return react.createElement("button", {
+			type: "button",
+			"data-session-cost-switch": String(checked),
+			"aria-label": label,
+			disabled,
+			onClick: () => onChange(!checked)
+		}, label);
+	},
+	Button({ variant, children, ...rest }) {
+		return react.createElement("button", {
+			type: "button",
+			"data-variant": variant,
+			...rest
+		}, children);
+	},
+	DisclosureRow({ title, open, onToggle, collapsedContent, children }) {
+		return react.createElement("div", {
+			"data-session-cost-fold": String(open)
+		}, [react.createElement("button", {
+			key: "row",
+			type: "button",
+			onClick: onToggle
+		}, title), open ? children : collapsedContent]);
+	},
+	IconChevronDownOutlineRegular(props) {
+		return react.createElement("svg", props);
 	}
 };
 function bundleRequire(specifier) {
@@ -396,6 +428,47 @@ function resolve(node) {
 function panelChildren(tree) {
 	return flatten(resolve(tree.props.children[1]).props.children);
 }
+/**
+ * Unfold one advanced section, or one route inside it, by the title it shows.
+ *
+ * The page opens as settings: the rate table and the override list are folded so
+ * the first screen is the four choices most sessions ever need.
+ */
+function unfold(mounted, title) {
+	const tree = mounted.draw();
+	const row = elements(tree).find((node) => typeof node?.props?.onToggle === "function" && node.props.title === title);
+	if (row === undefined) throw new Error(`no folded row titled ${title}`);
+	// A row that is already open stays open: this asserts a state, it does not
+	// flip one, so a case can call it more than once without folding the page up.
+	if (row.props.open === true) return tree;
+	row.props.onToggle();
+	return mounted.draw();
+}
+/** One override's field, by the route the row shows. */
+function routeControl(tree, route, field) {
+	const row = elements(tree).find((node) => node.props["data-session-cost-override"] === route);
+	const control = elements(row).find((node) => node.props["data-session-cost-field"] === field);
+	if (control === undefined) throw new Error(`no ${field} control in ${route}`);
+	return control;
+}
+/** Unfold the override list and then one route inside it. */
+function openOverride(mounted, route) {
+	unfold(mounted, "价格覆盖");
+	return unfold(mounted, route);
+}
+/** The page's own status line. */
+function statusOf(tree) {
+	return elements(tree).find((node) => node.props.className === "dshCost_status").props.children;
+}
+/** Every override row on screen, by route. */
+function routesOf(tree) {
+	return elements(tree).filter((node) => node.props["data-session-cost-override"] !== undefined).map((node) => node.props["data-session-cost-override"]);
+}
+/** Unfold the override list, which every override case needs open. */
+function pageOf(mounted) {
+	return unfold(mounted, "价格覆盖");
+}
+
 /** The converted summary figure the title carries, as rendered. */
 function titleValueOf(tree) {
 	const title = panelChildren(tree).find((child) => child.props.className === "dshCost_title");
@@ -724,34 +797,44 @@ const healthy = new configured.boundary({ children: "CHILD" });
 check("the boundary passes children through while healthy", healthy.render(), "CHILD");
 
 const pageTree = mount(configured.component, { ...pageProps, view: "page" }).draw();
-checkJson("one card per override", elements(pageTree).filter((node) => node.props["data-session-cost-override"] !== undefined).map((node) => node.props["data-session-cost-override"]), ["my-gateway/qwen3-32b"]);
-// There is no save control to forget: every edit persists as it is made.
-check("the editor offers no save control", elements(pageTree).some((node) => node.props.className === "dshCost_button dshCost_primary"), false);
-check("the editor shows the enable switch", elements(pageTree).some((node) => node.type === "input" && node.props.type === "checkbox"), true);
-check("the editor shows the window selector", elements(pageTree).some((node) => node.type === "select"), true);
+// The page opens as settings, not as a table: the two advanced sections are
+// folded, and what is left is the four choices a session usually needs.
+checkJson("the advanced sections start folded", elements(pageTree).filter((node) => node.props["data-session-cost-fold"] !== undefined).map((node) => node.props["data-session-cost-fold"]), ["false", "false"]);
+check("...so no override row is on screen yet", routesOf(pageTree).length, 0);
+checkJson("the fields stack in the shell's order", elements(pageTree).filter((node) => node.props.className === "dshCost_field").length, 5);
+check("the editor offers no save control", elements(pageTree).some((node) => node.props["data-variant"] === "primary"), false);
+const enableSwitch = elements(pageTree).find((node) => node.props["data-session-cost-switch"] !== undefined);
+check("the editor shows the enable switch", enableSwitch?.props["data-session-cost-switch"], "true");
 // Text has to come from the dictionary: the real `t` falls back to the key
 // itself, so a missing entry shows on screen as a raw `settings.*` label.
 // That is exactly how a missing peak-column key shipped once.
 const strings = elements(pageTree).map((node) => node.props.children).filter((child) => typeof child === "string");
-checkJson("no label renders as a raw dictionary key", strings.filter((text) => /^(settings|dialog)\./.test(text)), []);
+checkJson("no label renders as a raw dictionary key", strings.filter((value) => /^(settings|dialog)\./.test(value)), []);
 check("building the editor writes nothing", configured.harness.writes.length, 0);
+
+// The page takes the shell's own settings-form metrics rather than inventing a
+// look: stacked fields, a hairline between them, the label at 13/500, the control
+// at 34px, the hint under it. Pinned as declared values so a rewrite cannot quietly
+// drift back into a wall of boxes.
+check("fields use the shell's settings-form padding", /\.dshCost_field\{[^}]*padding:12px 0/.test(sheet), true);
+check("...split by the shell's hairline", /\.dshCost_field\+\.dshCost_field\{[^}]*border-top:\.5px solid var\(--dsw-alias-border-l2\)/.test(sheet), true);
+check("...labelled at the shell's label metrics", /\.dshCost_fieldLabel\{[^}]*font-size:13px[^}]*font-weight:500/.test(sheet), true);
+check("...with the shell's 34px control", /\.dshCost_input\{[^}]*height:34px/.test(sheet), true);
+check("...and the shell's hint under it", /\.dshCost_hint\{[^}]*color:var\(--dsw-alias-label-tertiary\)/.test(sheet), true);
 
 // An untouched form writes nothing and says nothing: with no save control there
 // is no idle state to explain.
 const untouched = mount(configured.component, { ...pageProps, view: "page" });
 await flush();
 check("an untouched form writes nothing", configured.harness.writes.length, 0);
-check("...and reports no status", elements(untouched.draw()).find((node) => node.props.className === "dshCost_status").props.children, "");
+check("...and reports no status", statusOf(untouched.draw()), "");
 
 // Editing one rate writes only the prices field, and only the edited value.
 const edited = settingsHarness({ settingsValue: CONFIGURED });
-const editedProps = { settings: edited.face.settings, t };
-const mounted = mount(edited.component, { ...editedProps, view: "page" });
-let editedTree = mounted.draw();
-const card = elements(editedTree).find((node) => node.props["data-session-cost-override"] !== undefined);
-const cardInputs = elements(card).filter((node) => node.type === "input");
-check("a card exposes the key, currency, label, four rates and four peak rates", cardInputs.length, 11);
-cardInputs[3].props.onChange({ target: { value: "1.5" } });
+const mounted = mount(edited.component, { ...edited.face, t, view: "page" });
+let editedTree = openOverride(mounted, "my-gateway/qwen3-32b");
+checkJson("an override unfolds into its four rates and four peak rates", ["label", "currency", "miss", "hit", "write", "out", "peakMiss", "peakHit", "peakWrite", "peakOut"].map((field) => routeControl(editedTree, "my-gateway/qwen3-32b", field).props.value), ["My Qwen", "$", "0.2", "0.02", "0.2", "0.4", "", "", "", ""]);
+routeControl(editedTree, "my-gateway/qwen3-32b", "miss").props.onChange({ target: { value: "1.5" } });
 editedTree = mounted.draw();
 await flush();
 check("editing one rate writes exactly one field", edited.harness.writes.length, 1);
@@ -760,7 +843,7 @@ check("the edited rate reaches the write", edited.harness.writes[0][1]["my-gatew
 check("the untouched rates survive", JSON.stringify([edited.harness.writes[0][1]["my-gateway/qwen3-32b"].hit, edited.harness.writes[0][1]["my-gateway/qwen3-32b"].out]), JSON.stringify([0.02, 0.4]));
 check("a blank number box means zero", edited.harness.writes[0][1]["my-gateway/qwen3-32b"].peak.miss, 0);
 editedTree = mounted.draw();
-check("an accepted edit reports itself saved", elements(editedTree).find((node) => node.props.className === "dshCost_status").props.children, "已保存");
+check("an accepted edit reports itself saved", statusOf(editedTree), "已保存");
 
 // The Host materializes every schema default into the section it resolves —
 // `label: ""`, `currency: ""`, and an all-zero peak window. None of that is an
@@ -780,13 +863,12 @@ check("the Host's materialized defaults are not an edit", materialized.harness.w
 const sequential = settingsHarness({ settingsValue: CONFIGURED });
 const sequentialMount = mount(sequential.component, { ...sequential.face, t, view: "page" });
 let sequentialTree = sequentialMount.draw();
-elements(sequentialTree).find((node) => node.type === "input" && node.props.type === "checkbox").props.onChange({ target: { checked: false } });
+elements(sequentialTree).find((node) => node.props["data-session-cost-switch"] !== undefined).props.onClick();
 await flush();
 checkJson("an edited switch writes only that field", sequential.harness.writes.map((write) => write[0]), ["enabled"]);
-sequentialTree = sequentialMount.draw();
-elements(sequentialTree).find((node) => node.props["data-session-cost-override"] !== undefined);
-const sequentialCard = elements(sequentialTree).find((node) => node.props["data-session-cost-override"] !== undefined);
-elements(sequentialCard).filter((node) => node.type === "input")[3].props.onChange({ target: { value: "1.5" } });
+sequentialTree = pageOf(sequentialMount);
+sequentialTree = unfold(sequentialMount, "my-gateway/qwen3-32b");
+routeControl(sequentialTree, "my-gateway/qwen3-32b", "miss").props.onChange({ target: { value: "1.5" } });
 await flush();
 checkJson("...and the next edit writes only its own", sequential.harness.writes.map((write) => write[0]), ["enabled", "prices"]);
 check("re-selecting the same value writes nothing new", (() => {
@@ -802,43 +884,46 @@ check("re-selecting the same value writes nothing new", (() => {
 // Removing a row is an edit like any other: it has to reach the Host.
 const removing = settingsHarness({ settingsValue: CONFIGURED });
 const removingMount = mount(removing.component, { ...removing.face, t, view: "page" });
-const removeButton = elements(removingMount.draw()).find((node) => node.props.className === "dshCost_remove");
-removeButton.props.onClick();
+let removingTree = openOverride(removingMount, "my-gateway/qwen3-32b");
+elements(removingTree).find((node) => node.type === "button" && node.props.children === "删除这条覆盖").props.onClick();
 await flush();
 check("removing a row persists the empty table", JSON.stringify(removing.harness.writes), JSON.stringify([["prices", {}]]));
 
 // Adding a row writes a second entry, and a refused write is reported.
 const added = settingsHarness({ settingsValue: CONFIGURED });
 const addedMounted = mount(added.component, { ...added.face, t, view: "page" });
-let addedTree = addedMounted.draw();
-elements(addedTree).find((node) => node.type === "button" && node.props.children === "手动添加空白覆盖").props.onClick();
+let addedTree = pageOf(addedMounted);
+elements(addedTree).find((node) => node.type === "button" && node.props.children === "添加覆盖").props.onClick();
 addedTree = addedMounted.draw();
-check("adding a row shows a second card", elements(addedTree).filter((node) => node.props["data-session-cost-override"] !== undefined).length, 2);
+check("adding a row shows a second row", routesOf(addedTree).length, 2);
+// The title is what the row shows, so read it off the row that renders it.
+const unnamedRow = elements(addedTree).find((node) => node.props["data-session-cost-override"] === "");
+check("...named as an unnamed override", elements(unnamedRow).find((node) => typeof node.props?.title === "string")?.props.title, "未命名覆盖");
 await flush();
 check("an unnamed added row is not written", added.harness.writes.length, 0);
 
 const refused = settingsHarness({ settingsValue: CONFIGURED, refuseWrites: true });
 const refusedMounted = mount(refused.component, { settings: refused.face.settings, t, view: "page" });
-const refusedCard = elements(refusedMounted.draw()).find((node) => node.props["data-session-cost-override"] !== undefined);
-elements(refusedCard).filter((node) => node.type === "input")[3].props.onChange({ target: { value: "2" } });
-const refusedTree = refusedMounted.draw();
+let refusedTree = openOverride(refusedMounted, "my-gateway/qwen3-32b");
+routeControl(refusedTree, "my-gateway/qwen3-32b", "miss").props.onChange({ target: { value: "2" } });
 await flush();
-check("a refused write reports failure", elements(refusedMounted.draw()).find((node) => node.props.className === "dshCost_status").props.children, "保存失败");
+check("a refused write reports failure", statusOf(refusedMounted.draw()), "保存失败");
 
 // An empty table, a loading namespace, and an unavailable one each say so.
 const emptyHarness = settingsHarness({ settingsValue: { enabled: true, period: "auto", currency: "$", prices: {} } });
-check("an empty override table says so", textOf(mount(emptyHarness.component, { settings: emptyHarness.face.settings, t, view: "page" }).draw()).includes("暂无覆盖"), true);
+check("an empty override table says so", textOf(pageOf(mount(emptyHarness.component, { settings: emptyHarness.face.settings, t, view: "page" }))).includes("暂无覆盖"), true);
 const loadingHarness = settingsHarness({});
-check("a loading namespace says so", elements(mount(loadingHarness.component, { settings: loadingHarness.face.settings, t, view: "page" }).draw()).find((node) => node.props.className === "dshCost_settingsHint").props.children, "读取设置…");
+const loadingTree = mount(loadingHarness.component, { settings: loadingHarness.face.settings, t, view: "page" }).draw();
+check("a loading namespace says so", elements(loadingTree).find((node) => node.props.className === "dshCost_notice").props.children, "读取设置…");
 
 // ── the currency control ─────────────────────────────────────────────────────
 const currency = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
 const currencyMount = mount(currency.component, { ...currency.face, t, view: "page" });
 let currencyTree = currencyMount.draw();
-const currencySelect = elements(currencyTree).find((node) => node.type === "select" && elements(node).some((child) => child.type === "option" && child.props.value === "HK$"));
-check("the currency control offers common symbols", currencySelect !== undefined, true);
+const currencySelect = elements(currencyTree).find((node) => node.type === "select" && node.props["aria-label"] === "默认币种符号");
+check("the currency control offers common symbols", elements(currencySelect).some((child) => child.type === "option" && child.props.value === "HK$"), true);
 check("the currency control offers an escape hatch", elements(currencySelect).some((child) => child.type === "option" && child.props.value === "\u0000custom"), true);
-check("a preset symbol needs no text box", elements(currencyTree).some((node) => node.props.className === "dshCost_input dshCost_currency"), false);
+check("a preset symbol needs no text box", elements(currencyTree).some((node) => node.props.className === "dshCost_input dshCost_custom"), false);
 currencySelect.props.onChange({ target: { value: "HK$" } });
 currencyTree = currencyMount.draw();
 await flush();
@@ -847,15 +932,15 @@ checkJson("picking a symbol writes it", currency.harness.writes.filter((write) =
 // A symbol outside the list keeps its own text box, and the select says so.
 const custom = settingsHarness({ settingsValue: { ...CONFIGURED, currency: "元" }, catalog: [] });
 const customTree = mount(custom.component, { ...custom.face, t, view: "page" }).draw();
-check("an unlisted symbol gets a text box", elements(customTree).find((node) => node.props.className === "dshCost_input dshCost_currency")?.props.value, "元");
-const customSelect = elements(customTree).find((node) => node.type === "select" && elements(node).some((child) => child.props.value === "\u0000custom"));
+check("an unlisted symbol gets a text box", elements(customTree).find((node) => node.props.className === "dshCost_input dshCost_custom")?.props.value, "元");
+const customSelect = elements(customTree).find((node) => node.type === "select" && node.props["aria-label"] === "默认币种符号");
 check("the select reports the custom choice", customSelect.props.value, "\u0000custom");
 
 // ── the official price list control ──────────────────────────────────────────
 const cards = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
 const cardsMount = mount(cards.component, { ...cards.face, t, view: "page" });
 let cardsTree = cardsMount.draw();
-const cardsSelect = elements(cardsTree).find((node) => node.type === "select" && elements(node).some((child) => child.props.value === "cny"));
+const cardsSelect = elements(cardsTree).find((node) => node.type === "select" && node.props["aria-label"] === "DeepSeek 官方价目");
 check("the page offers the official price lists", cardsSelect !== undefined, true);
 checkJson("...including automatic detection", elements(cardsSelect).filter((child) => child.type === "option").map((child) => child.props.value), ["auto", "cny", "usd"]);
 check("the resolved choice is selected", cardsSelect.props.value, "auto");
@@ -874,7 +959,6 @@ check("a resolved default is not restated on save", settled.harness.writes.lengt
 const fx = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
 const fxMount = mount(fx.component, { ...fx.face, t, view: "page" });
 let fxTree = fxMount.draw();
-// The default-symbol select lists € too, so address this one by its label.
 const displaySelect = elements(fxTree).find((node) => node.type === "select" && node.props["aria-label"] === "折算显示币种");
 check("the page offers a summary currency", displaySelect !== undefined, true);
 check("...including no conversion at all", elements(displaySelect).some((child) => child.type === "option" && child.props.value === ""), true);
@@ -892,33 +976,33 @@ const typed = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
 const typedMount = mount(typed.component, { ...typed.face, t, view: "page" });
 let typedTree = typedMount.draw();
 const typedSelect = elements(typedTree).find((node) => node.type === "select" && node.props["aria-label"] === "折算显示币种");
-check("no custom box until custom is chosen", elements(typedTree).filter((node) => node.props["aria-label"] === "自定义…").length, 0);
+check("no custom box until custom is chosen", elements(typedTree).filter((node) => node.props.className === "dshCost_input dshCost_custom").length, 0);
 typedSelect.props.onChange({ target: { value: "\u0000custom" } });
 typedTree = typedMount.draw();
-const typedBox = elements(typedTree).find((node) => node.props["aria-label"] === "自定义…");
+const typedBox = elements(typedTree).find((node) => node.props.className === "dshCost_input dshCost_custom");
 check("choosing custom reveals the box", typedBox !== undefined, true);
 check("...without writing a value yet", typed.harness.writes.length, 0);
 typedBox.props.onChange({ target: { value: "₫" } });
 await flush();
 checkJson("...and typing one persists it", typed.harness.writes.filter((write) => write[0] === "displayCurrency"), [["displayCurrency", "₫"]]);
 typedTree = typedMount.draw();
-check("a stored custom symbol keeps the box open", elements(typedTree).some((node) => node.props["aria-label"] === "自定义…"), true);
+check("a stored custom symbol keeps the box open", elements(typedTree).some((node) => node.props.className === "dshCost_input dshCost_custom"), true);
 
-// The rate table: rows are editable, and only usable rates are stored.
+// The rate table lives behind its own fold, and only usable rates are stored.
 const rates = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
 const ratesMount = mount(rates.component, { ...rates.face, t, view: "page" });
-let ratesTree = ratesMount.draw();
-check("no rate rows until one is added", elements(ratesTree).filter((node) => node.props["data-session-cost-rate"] !== undefined).length, 0);
+check("the rate table is folded away at first", elements(ratesMount.draw()).filter((node) => node.props["data-session-cost-fx"] !== undefined).length, 0);
+let ratesTree = unfold(ratesMount, "汇率表");
+check("no rate rows until one is added", elements(ratesTree).filter((node) => node.props["data-session-cost-fx"] !== undefined).length, 0);
 elements(ratesTree).find((node) => node.type === "button" && node.props.children === "添加汇率").props.onClick();
 ratesTree = ratesMount.draw();
-const rateRow = elements(ratesTree).find((node) => node.props["data-session-cost-rate"] !== undefined);
+const rateRow = elements(ratesTree).find((node) => node.props["data-session-cost-fx"] !== undefined);
 check("adding a rate shows a row", rateRow !== undefined, true);
 // Re-draw between edits: a real keystroke re-renders, so the second field sees
 // the draft the first one produced.
-elements(rateRow).filter((node) => node.type === "input")[0].props.onChange({ target: { value: "¥" } });
+elements(rateRow).find((node) => node.props["data-session-cost-fx-field"] === "currency").props.onChange({ target: { value: "¥" } });
 ratesTree = ratesMount.draw();
-const rateRowNext = elements(ratesTree).find((node) => node.props["data-session-cost-rate"] !== undefined);
-elements(rateRowNext).filter((node) => node.type === "input")[1].props.onChange({ target: { value: "0.1467" } });
+elements(elements(ratesTree).find((node) => node.props["data-session-cost-fx"] !== undefined)).find((node) => node.props["data-session-cost-fx-field"] === "rate").props.onChange({ target: { value: "0.1467" } });
 ratesTree = ratesMount.draw();
 await flush();
 checkJson("a filled rate row is stored as a number", rates.harness.writes.filter((write) => write[0] === "fxRates"), [["fxRates", { "¥": 0.1467 }]]);
@@ -927,7 +1011,7 @@ checkJson("a filled rate row is stored as a number", rates.harness.writes.filter
 // (the conversion is where an unusable rate is refused).
 const blank = settingsHarness({ settingsValue: { ...CONFIGURED, fxRates: { "¥": 0 } }, catalog: [] });
 const blankMount = mount(blank.component, { ...blank.face, t, view: "page" });
-check("a stored rate round-trips into the table", elements(blankMount.draw()).find((node) => node.props["data-session-cost-rate"] !== undefined).props["data-session-cost-rate"], "¥");
+check("a stored rate round-trips into the table", elements(unfold(blankMount, "汇率表")).find((node) => node.props["data-session-cost-fx"] !== undefined).props["data-session-cost-fx"], "¥");
 await flush();
 check("an untouched rate table is not restated", blank.harness.writes.length, 0);
 
@@ -936,11 +1020,24 @@ const CATALOG = [
 	{ id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-flash", name: "DeepSeek Flash" }, { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" }] },
 	{ id: "my-gateway", name: "My Gateway", models: [{ id: "qwen3-32b", name: "Qwen3 32B" }, { id: "llama-4", name: "Llama 4" }] }
 ];
+/** Import one route through the picker; reports the page and the mount that drove it. */
+async function importInto(harness) {
+	const mounted = mount(harness.component, { ...harness.face, t, view: "page" });
+	mounted.draw();
+	await flush();
+	const tree = unfold(mounted, "价格覆盖");
+	const picker = elements(tree).find((node) => node.type === "select" && elements(node).some((child) => child.type === "optgroup"));
+	picker.props.onChange({ target: { value: "my-gateway/llama-4" } });
+	const picked = mounted.draw();
+	elements(picked).find((node) => node.type === "button" && node.props.children === "导入").props.onClick();
+	return { tree: mounted.draw(), mounted };
+}
+
 const importing = settingsHarness({ settingsValue: CONFIGURED, catalog: CATALOG });
 const importingMount = mount(importing.component, { ...importing.face, t, view: "page" });
 importingMount.draw();
 await flush();
-let importingTree = importingMount.draw();
+let importingTree = unfold(importingMount, "价格覆盖");
 const picker = elements(importingTree).find((node) => node.type === "select" && elements(node).some((child) => child.type === "optgroup"));
 checkJson("the picker groups routes by provider", elements(picker).filter((node) => node.type === "optgroup").map((node) => node.props.label), ["DeepSeek · deepseek", "My Gateway · my-gateway"]);
 const routeOptions = elements(picker).filter((node) => node.type === "option" && node.props.value !== "");
@@ -953,21 +1050,20 @@ picker.props.onChange({ target: { value: "my-gateway/llama-4" } });
 importingTree = importingMount.draw();
 elements(importingTree).find((node) => node.type === "button" && node.props.children === "导入").props.onClick();
 importingTree = importingMount.draw();
-const importedCards = elements(importingTree).filter((node) => node.props["data-session-cost-override"] !== undefined);
-checkJson("importing adds the picked route as a row", importedCards.map((node) => node.props["data-session-cost-override"]), ["my-gateway/qwen3-32b", "my-gateway/llama-4"]);
-check("the display name arrives with the route", elements(importedCards[1]).filter((node) => node.type === "input")[2].props.value, "Llama 4");
+checkJson("importing adds the picked route as a row", routesOf(importingTree), ["my-gateway/qwen3-32b", "my-gateway/llama-4"]);
+const importedTree = unfold(importingMount, "my-gateway/llama-4");
+check("the display name arrives with the route", routeControl(importedTree, "my-gateway/llama-4", "label").props.value, "Llama 4");
 await flush();
 check("saving writes both rows", Object.keys(importing.harness.writes[0][1]).length, 2);
-
 
 // A catalog that cannot be read must leave manual entry working.
 const offline = settingsHarness({ settingsValue: CONFIGURED, catalogFails: true });
 const offlineMount = mount(offline.component, { ...offline.face, t, view: "page" });
 offlineMount.draw();
 await flush();
-const offlineTree = offlineMount.draw();
+const offlineTree = unfold(offlineMount, "价格覆盖");
 check("a failed catalog says so", textOf(offlineTree).includes("读不到模型目录"), true);
-check("manual entry survives a failed catalog", elements(offlineTree).some((node) => node.type === "button" && node.props.children === "手动添加空白覆盖"), true);
+check("manual entry survives a failed catalog", elements(offlineTree).some((node) => node.type === "button" && node.props.children === "添加覆盖"), true);
 
 // ── pre-filling an imported row from the Host's preset table ─────────────────
 // The table arrives as a package-local chunk the Host half generates, so these
@@ -977,7 +1073,7 @@ const prefilling = settingsHarness({ settingsValue: CONFIGURED, catalog: CATALOG
 const prefillMount = mount(prefilling.component, { ...prefilling.face, t, view: "page" });
 prefillMount.draw();
 await flush();
-let prefillTree = prefillMount.draw();
+let prefillTree = unfold(prefillMount, "价格覆盖");
 const disclosure = elements(prefillTree).find((node) => node.props["data-session-cost-prefill"] !== undefined);
 check("the page discloses the pre-fill", disclosure?.props["data-session-cost-prefill"], "ready");
 check("...and how many routes it covers", textOf(disclosure).includes("1 条已定价"), true);
@@ -986,35 +1082,22 @@ prefillPicker.props.onChange({ target: { value: "my-gateway/llama-4" } });
 prefillTree = prefillMount.draw();
 elements(prefillTree).find((node) => node.type === "button" && node.props.children === "导入").props.onClick();
 prefillTree = prefillMount.draw();
-const prefillCard = elements(prefillTree).filter((node) => node.props["data-session-cost-override"] !== undefined)[1];
-checkJson("the preset rates arrive with the route, zeros left blank", elements(prefillCard).filter((node) => node.type === "input").map((node) => node.props.value), ["my-gateway/llama-4", "$", "Llama 4", "1", "0.1", "1.25", "5", "", "", "", ""]);
+prefillTree = openOverride(prefillMount, "my-gateway/llama-4");
+checkJson("the preset rates arrive with the route, zeros left blank", ["label", "currency", "miss", "hit", "write", "out", "peakMiss", "peakHit", "peakWrite", "peakOut"].map((field) => routeControl(prefillTree, "my-gateway/llama-4", field).props.value), ["Llama 4", "$", "1", "0.1", "1.25", "5", "", "", "", ""]);
 await flush();
 checkJson("a pre-filled row writes the preset", prefilling.harness.writes[0][1]["my-gateway/llama-4"], { currency: "$", label: "Llama 4", miss: 1, hit: 0.1, write: 1.25, out: 5, peak: { miss: 0, hit: 0, write: 0, out: 0 } });
 
-/** Import one route and report the row it produced, for the degradation cases. */
-async function importInto(harness) {
-	const mounted = mount(harness.component, { ...harness.face, t, view: "page" });
-	mounted.draw();
-	await flush();
-	let tree = mounted.draw();
-	const picker = elements(tree).find((node) => node.type === "select" && elements(node).some((child) => child.type === "optgroup"));
-	picker.props.onChange({ target: { value: "my-gateway/llama-4" } });
-	tree = mounted.draw();
-	elements(tree).find((node) => node.type === "button" && node.props.children === "导入").props.onClick();
-	tree = mounted.draw();
-	return tree;
-}
-
 const failing = settingsHarness({ settingsValue: CONFIGURED, catalog: CATALOG, ratesFails: true });
-const failingTree = await importInto(failing);
-const failingCard = elements(failingTree).filter((node) => node.props["data-session-cost-override"] !== undefined)[1];
-check("a failing chunk still imports the route", failingCard?.props["data-session-cost-override"], "my-gateway/llama-4");
-checkJson("...without inventing rates", elements(failingCard).filter((node) => node.type === "input").map((node) => node.props.value), ["my-gateway/llama-4", "", "Llama 4", "", "", "", "", "", "", "", ""]);
+const imported = await importInto(failing);
+const failingTree = imported.tree;
+const failingRow = openOverride(imported.mounted, "my-gateway/llama-4");
+const failingFields = ["label", "currency", "miss", "hit", "write", "out", "peakMiss", "peakHit", "peakWrite", "peakOut"];
+checkJson("a failing chunk still imports the route, without inventing rates", failingFields.map((field) => routeControl(failingRow, "my-gateway/llama-4", field).props.value), ["Llama 4", "", "", "", "", "", "", "", "", ""]);
 check("...and says presets are unavailable", textOf(elements(failingTree).find((node) => node.props["data-session-cost-prefill"] !== undefined)).includes("预设价不可用"), true);
 
 const chunkless = settingsHarness({ settingsValue: CONFIGURED, catalog: CATALOG, noChunkLoader: true });
-const chunklessTree = await importInto(chunkless);
-check("a deployment without the chunk loader still imports", elements(chunklessTree).filter((node) => node.props["data-session-cost-override"] !== undefined).length, 2);
+const chunklessTree = (await importInto(chunkless)).tree;
+check("a deployment without the chunk loader still imports", routesOf(chunklessTree).length, 2);
 check("...and reports no pre-fill", elements(chunklessTree).find((node) => node.props["data-session-cost-prefill"] !== undefined)?.props["data-session-cost-prefill"], "unavailable");
 
 // A route the presets do not price is custom or self-hosted, and the provider id
@@ -1024,16 +1107,16 @@ const suggesting = settingsHarness({ settingsValue: CONFIGURED, catalog: CUSTOM_
 const suggestingMount = mount(suggesting.component, { ...suggesting.face, t, view: "page" });
 suggestingMount.draw();
 await flush();
-let suggestingTree = suggestingMount.draw();
+let suggestingTree = unfold(suggestingMount, "价格覆盖");
 const suggestingPicker = elements(suggestingTree).find((node) => node.type === "select" && elements(node).some((child) => child.type === "optgroup"));
 suggestingPicker.props.onChange({ target: { value: "dashscope/qwen-max" } });
 suggestingTree = suggestingMount.draw();
 elements(suggestingTree).find((node) => node.type === "button" && node.props.children === "导入").props.onClick();
 suggestingTree = suggestingMount.draw();
-const suggestedCard = elements(suggestingTree).find((node) => node.props["data-session-cost-override"] === "dashscope/qwen-max");
-check("a custom route gets a currency suggestion", elements(suggestedCard).filter((node) => node.type === "input")[1].props.value, "¥");
-const cataloguedCard = elements(prefillTree).find((node) => node.props["data-session-cost-override"] === "my-gateway/llama-4");
-check("a preset-priced route keeps its own symbol", elements(cataloguedCard).filter((node) => node.type === "input")[1].props.value, "$");
+const suggestedRow = openOverride(suggestingMount, "dashscope/qwen-max");
+check("a custom route gets a currency suggestion", routeControl(suggestedRow, "dashscope/qwen-max", "currency").props.value, "¥");
+check("a preset-priced route keeps its own symbol", routeControl(prefillTree, "my-gateway/llama-4", "currency").props.value, "$");
+
 
 // ── hidden cases ─────────────────────────────────────────────────────────────
 check("no projection renders nothing", render(undefined), null);

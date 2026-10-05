@@ -862,7 +862,7 @@ check("the editor shows the enable switch", enableSwitch?.props["data-session-co
 // itself, so a missing entry shows on screen as a raw `settings.*` label.
 // That is exactly how a missing peak-column key shipped once.
 const strings = elements(pageTree).map((node) => node.props.children).filter((child) => typeof child === "string");
-checkJson("no label renders as a raw dictionary key", strings.filter((value) => /^(settings|dialog)\./.test(value)), []);
+checkJson("no label renders as a raw dictionary key", strings.filter((value) => /^(settings|dialog|currency)\./.test(value)), []);
 check("building the editor writes nothing", configured.harness.writes.length, 0);
 
 // The page takes the shell's own settings-form metrics rather than inventing a
@@ -974,7 +974,19 @@ const currency = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
 const currencyMount = mount(currency.component, { ...currency.face, t, view: "page" });
 let currencyTree = currencyMount.draw();
 const currencySelect = elements(currencyTree).find((node) => node.type === "select" && node.props["aria-label"] === "默认币种符号");
-check("the currency control offers common symbols", elements(currencySelect).some((child) => child.type === "option" && child.props.value === "HK$"), true);
+const symbolOption = (select, value) => elements(select).find((child) => child.type === "option" && child.props.value === value);
+check("the currency control offers common symbols", symbolOption(currencySelect, "HK$") !== undefined, true);
+// The symbol alone is ambiguous ("kr", "NT$"), so each option names its currency,
+// and the name follows the interface language like every other label.
+check("...naming each currency", textOf(symbolOption(currencySelect, "HK$")), "HK$ 港币");
+// Rendered with the English dictionary, the same option names the currency in
+// English: the label is built through `t`, so it follows the interface language.
+const tEn = makeT(dictionaries.en);
+const englishTree = mount(currency.component, { ...currency.face, t: tEn, view: "page" }).draw();
+const englishSelect = elements(englishTree).find((node) => node.type === "select" && node.props["aria-label"] === tEn("settings.currency"));
+check("...in the language the page is rendered in", textOf(elements(englishSelect).find((child) => child.type === "option" && child.props.value === "NT$")), "NT$ New Taiwan dollar");
+check("...including the ambiguous one", textOf(symbolOption(currencySelect, "kr")), "kr 克朗（北欧）");
+check("the custom escape hatch keeps its own copy", textOf(symbolOption(currencySelect, "\u0000custom")), "自定义…");
 check("the currency control offers an escape hatch", elements(currencySelect).some((child) => child.type === "option" && child.props.value === "\u0000custom"), true);
 check("a preset symbol needs no text box", elements(currencyTree).some((node) => node.props.className === "dshCost_input dshCost_custom"), false);
 currencySelect.props.onChange({ target: { value: "HK$" } });

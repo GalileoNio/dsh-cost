@@ -175,7 +175,7 @@ signal the client-HMR watcher already reads as "this bundle was rebuilt".
 |---|---|
 | `enabled` | Render the pill at all. Off registers no projection, so no key reaches the browser. |
 | `period` | `auto` charges each segment the window it fell in; `peak` / `offpeak` re-price every segment into one window. |
-| `currency` | Symbol for overrides that name none. Presets carry their own: the catalog is `$`, DeepSeek official is `¥`. |
+| `currency` | Symbol for overrides that name none. Presets carry their own: the catalog is `$`, DeepSeek official is `¥`. Each option in this list names its currency in the interface's language — `¥ 人民币`, `¥ Chinese yuan` — because a symbol alone is ambiguous: `kr` is the crown of three countries. |
 | `prices` | The override table, keyed `<provider>/<model>` or bare `<model>`; a qualified key wins. |
 
 Each override needs all four base rates. `peak` cannot be omitted — Schemastery
@@ -300,7 +300,7 @@ node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/fx.test.mjs           # 29 checks: the reference rates behind the converted figure
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 201 checks: the browser half, the tray and its settings page
+node test/bundle.test.mjs       # 205 checks: the browser half, the tray and its settings page
 node test/config.test.mjs       # 78 checks: the schema, the live wiring and the billing card
 ```
 

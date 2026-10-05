@@ -246,7 +246,16 @@ function applyToFakeContext(options = {}) {
 		}
 	};
 	vm.runInThisContext(LOADED, { filename: BUNDLE });
-	const exports_ = registration.factory(bundleRequire);
+	// The preset-table chunk is a package-local dynamic chunk, so the bundle asks
+	// for it through `require.async`. Both an absent loader and a failing load are
+	// real deployments, and both have to degrade to typing the rates by hand.
+	const chunkRequire = (specifier) => bundleRequire(specifier);
+	if (options.noChunkLoader !== true) {
+		chunkRequire.async = () => (options.ratesFails === true
+			? Promise.reject(new Error("no chunk"))
+			: Promise.resolve({ routes: options.rates ?? null }));
+	}
+	const exports_ = registration.factory(chunkRequire);
 	exports_.apply(ctx);
 	const captured = registered.find((entry) => entry.options.name === "conversation.composer.dock");
 	return { exports_, log, registered, captured, writes, settingsState };
@@ -646,6 +655,55 @@ await flush();
 const offlineTree = offlineMount.draw();
 check("a failed catalog says so", textOf(offlineTree).includes("读不到模型目录"), true);
 check("manual entry survives a failed catalog", elements(offlineTree).some((node) => node.type === "button" && node.props.children === "手动添加空白覆盖"), true);
+
+// ── pre-filling an imported row from the Host's preset table ─────────────────
+// The table arrives as a package-local chunk the Host half generates, so these
+// cases drive the chunk's three shapes: present, failing, and absent.
+const RATES = { "my-gateway/llama-4": ["$", 1, 0.1, 1.25, 5, 0, 0, 0, 0] };
+const prefilling = settingsHarness({ settingsValue: CONFIGURED, catalog: CATALOG, rates: RATES });
+const prefillMount = mount(prefilling.component, { ...prefilling.face, t, view: "page" });
+prefillMount.draw();
+await flush();
+let prefillTree = prefillMount.draw();
+const disclosure = elements(prefillTree).find((node) => node.props["data-session-cost-prefill"] !== undefined);
+check("the page discloses the pre-fill", disclosure?.props["data-session-cost-prefill"], "ready");
+check("...and how many routes it covers", textOf(disclosure).includes("1 条已定价"), true);
+const prefillPicker = elements(prefillTree).find((node) => node.type === "select" && elements(node).some((child) => child.type === "optgroup"));
+prefillPicker.props.onChange({ target: { value: "my-gateway/llama-4" } });
+prefillTree = prefillMount.draw();
+elements(prefillTree).find((node) => node.type === "button" && node.props.children === "导入").props.onClick();
+prefillTree = prefillMount.draw();
+const prefillCard = elements(prefillTree).filter((node) => node.props["data-session-cost-override"] !== undefined)[1];
+checkJson("the preset rates arrive with the route, zeros left blank", elements(prefillCard).filter((node) => node.type === "input").map((node) => node.props.value), ["my-gateway/llama-4", "$", "Llama 4", "1", "0.1", "1.25", "5", "", "", "", ""]);
+elements(prefillTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
+await flush();
+checkJson("a pre-filled row writes the preset", prefilling.harness.writes[0][1]["my-gateway/llama-4"], { currency: "$", label: "Llama 4", miss: 1, hit: 0.1, write: 1.25, out: 5, peak: { miss: 0, hit: 0, write: 0, out: 0 } });
+
+/** Import one route and report the row it produced, for the degradation cases. */
+async function importInto(harness) {
+	const mounted = mount(harness.component, { ...harness.face, t, view: "page" });
+	mounted.draw();
+	await flush();
+	let tree = mounted.draw();
+	const picker = elements(tree).find((node) => node.type === "select" && elements(node).some((child) => child.type === "optgroup"));
+	picker.props.onChange({ target: { value: "my-gateway/llama-4" } });
+	tree = mounted.draw();
+	elements(tree).find((node) => node.type === "button" && node.props.children === "导入").props.onClick();
+	tree = mounted.draw();
+	return tree;
+}
+
+const failing = settingsHarness({ settingsValue: CONFIGURED, catalog: CATALOG, ratesFails: true });
+const failingTree = await importInto(failing);
+const failingCard = elements(failingTree).filter((node) => node.props["data-session-cost-override"] !== undefined)[1];
+check("a failing chunk still imports the route", failingCard?.props["data-session-cost-override"], "my-gateway/llama-4");
+checkJson("...without inventing rates", elements(failingCard).filter((node) => node.type === "input").map((node) => node.props.value), ["my-gateway/llama-4", "", "Llama 4", "", "", "", "", "", "", "", ""]);
+check("...and says presets are unavailable", textOf(elements(failingTree).find((node) => node.props["data-session-cost-prefill"] !== undefined)).includes("预设价不可用"), true);
+
+const chunkless = settingsHarness({ settingsValue: CONFIGURED, catalog: CATALOG, noChunkLoader: true });
+const chunklessTree = await importInto(chunkless);
+check("a deployment without the chunk loader still imports", elements(chunklessTree).filter((node) => node.props["data-session-cost-override"] !== undefined).length, 2);
+check("...and reports no pre-fill", elements(chunklessTree).find((node) => node.props["data-session-cost-prefill"] !== undefined)?.props["data-session-cost-prefill"], "unavailable");
 
 // ── hidden cases ─────────────────────────────────────────────────────────────
 check("no projection renders nothing", render(undefined), null);

@@ -12,3 +12,8 @@ logs/
 
 *.log
 .DS_Store
+
+# The preset table the Host half materializes from the installed catalog. It is a
+# build artifact of this install: generated at startup, never committed, and
+# regenerated whenever the catalog changes.
+lib/client.rates.js

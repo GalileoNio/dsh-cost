@@ -135,6 +135,26 @@ The default currency is a select of the common symbols with a Custom… escape
 hatch for anything else. It applies to every override that names no symbol of its
 own; presets keep theirs (the catalog is `$`, DeepSeek official is `¥`).
 
+### Where those preset rates come from
+
+Importing fills in the rates too, from the same presets the Session fold charges
+with. The browser cannot read that catalog itself — `@earendil-works/pi-ai` is a
+Host dependency, and the plugin-visible wires do not carry a table this size (a
+Session-projection baseline re-sends every value on every frame and for every
+listed Session; a custom Remote namespace needs generated Typert contributions,
+which only the assembly can add).
+
+So the Host half materializes it as a **package-local client chunk**:
+`lib/client.rates.js`, ~1500 routes as compact rate tuples, fetched with
+`require.async("./client.rates.js")` the first time a settings page opens.
+Nothing on the Session path pays for it, and an install the Host cannot write to
+simply has no pre-filled table — the page says so and you type the rates.
+
+The chunk is a generated artifact: gitignored, written at startup, and rewritten
+only when the table changes. Its URL carries the *client entry's* artifact
+revision, so a rewrite also moves `lib/client.js`'s filesystem metadata — the same
+signal the client-HMR watcher already reads as "this bundle was rebuilt".
+
 | Field | Meaning |
 |---|---|
 | `enabled` | Render the pill at all. Off registers no projection, so no key reaches the browser. |
@@ -176,18 +196,19 @@ exchange rate would put a number in the disclosure that no vendor ever billed.
 
 ## Verification
 
-Four self-contained harnesses, all runnable with plain `node` and no build:
+Five self-contained harnesses, all runnable with plain `node` and no build:
 
 ```
 npm test
 ```
 
-`npm test` runs all four, and each also runs alone:
+`npm test` runs all five, and each also runs alone:
 
 ```
 node test/presets.test.mjs      # 49 checks: catalog derivation and precedence
+node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 87 checks: the browser half and its settings page
+node test/bundle.test.mjs       # 96 checks: the browser half and its settings page
 node test/config.test.mjs       # 44 checks: the schema and the live wiring
 ```
 
@@ -210,6 +231,10 @@ stub only React and the DOM, so a passing run means the shipped code works.
   changed. Its `ConfigForm` stub is a class whose methods read `this.store`, so
   the detached method references React hands to `useSyncExternalStore` fail the
   suite exactly as they fail in the browser.
+- `rates-chunk.test.mjs` pins the table against the live preset lookup route by
+  route, evaluates the generated source the way the browser does, and proves the
+  writer is idempotent: an unchanged catalog must not rewrite the file or move the
+  client entry's revision, which is what keys the chunk's browser cache.
 - `config.test.mjs` checks schema defaults and rejections, the `.volatile()`
   markers the settings page depends on, and then drives the definition `apply`
   actually registers — the only place the schema, the presets, and the fold meet.

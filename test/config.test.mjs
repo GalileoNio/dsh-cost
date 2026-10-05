@@ -36,6 +36,13 @@ check("namespace is the profile entry id", NAMESPACE, "session-cost");
 check("cordis plugin name", name, "session-cost");
 check("injects the projection registry", JSON.stringify(inject), JSON.stringify(["sessionProjections"]));
 
+/**
+ * Applying also materializes the browser's preset-table chunk next to
+ * `client.js`, because that is what the Host does on every boot. The write is
+ * idempotent — a matching file is left untouched and the client entry's
+ * revision only moves when the table actually changes — so running this suite
+ * inside an installed profile leaves the same artifact a real startup would.
+ */
 /** Capture whatever one apply() registers. */
 function register(config) {
 	const registered = [];

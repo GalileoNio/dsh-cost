@@ -98,15 +98,22 @@ the plugin's settings.
 
 ### Maintaining the table
 
-**Settings → Plugins → this plugin's card.** The editor is rendered by the
-plugin itself: the Plugins page draws no automatic schema form, so a plugin with
-settings claims a seat and draws its own. This one claims two, so the same form
-is reachable from either:
+**Settings → Plugins → the "Session cost" tab.** No automatic schema form exists
+in this build: the Plugins page renders only what a plugin claims for itself and
+draws on its own. This one claims three seats, so the same form is reachable from
+any of them — the first is a page of its own and the discoverable one:
 
 | Seat | Key | Where it appears |
 |---|---|---|
-| `plugins.bundle.config` | `dsh-client-ui-session-cost` | The bundle's own page, between its description and its rows |
+| `settings.plugins.tab` | `session-cost` | **A page of its own** in the Plugins settings section, rendered as a tab beside the plugin list |
+| `plugins.bundle.config` | `dsh-client-ui-session-cost` | The bundle card's page, between its description and its rows |
 | `plugins.row.config` | `dsh-client-ui-session-cost#session-cost` | The `session-cost` row's page |
+
+A crash inside the form is contained by the plugin's own error boundary and
+printed in place. That matters: the slot renderer retires a crashed entry from
+its cell, one-shot, and never puts it back — so without the boundary an
+exception here would make the configuration silently vanish and read as "this
+plugin has no settings".
 
 Every accepted write goes through the `session-cost` settings namespace's
 `ConfigForm`, which lands it in the profile patch by entry id. The editor writes
@@ -164,7 +171,7 @@ npm test
 ```
 node test/presets.test.mjs      # 49 checks: catalog derivation and precedence
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 68 checks: the browser half and its settings page
+node test/bundle.test.mjs       # 78 checks: the browser half and its settings page
 node test/config.test.mjs       # 44 checks: the schema and the live wiring
 ```
 

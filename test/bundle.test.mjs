@@ -54,6 +54,16 @@ globalThis.document = {
 
 const react = {
 	Fragment: Symbol("Fragment"),
+	/** Minimal base for the settings error boundary, which has to be a class. */
+	Component: class Component {
+		constructor(props) {
+			this.props = props ?? {};
+			this.state = {};
+		}
+		setState(next) {
+			this.state = { ...this.state, ...(typeof next === "function" ? next(this.state) : next) };
+		}
+	},
 	createElement(type, props, ...children) {
 		const node = { type, props: { ...(props ?? {}) } };
 		if (children.length > 0) node.props.children = children.length === 1 ? children[0] : children;
@@ -113,7 +123,15 @@ function mount(component, props) {
 	};
 	return { draw, slots };
 }
-/** Every element in a tree, resolving function components as React would. */
+/** Render one element the way React would: function components called, classes instantiated. */
+function renderNode(node) {
+	if (typeof node.type !== "function") return null;
+	if (node.type.prototype instanceof react.Component) {
+		return new node.type(node.props).render();
+	}
+	return node.type(node.props);
+}
+/** Every element in a tree, resolving function and class components as React would. */
 function elements(node, out = []) {
 	if (Array.isArray(node)) {
 		for (const child of node) elements(child, out);
@@ -122,7 +140,7 @@ function elements(node, out = []) {
 	if (node === null || node === undefined || typeof node !== "object") return out;
 	out.push(node);
 	if (typeof node.type === "function") {
-		elements(node.type(node.props), out);
+		elements(renderNode(node), out);
 		return out;
 	}
 	elements(node.props?.children, out);
@@ -445,11 +463,15 @@ const CONFIGURED = {
 		}
 	}
 };
-/** Apply once and hand back the settings seat's component plus its write log. */
+/** Apply once and hand back the settings seat, its boundary, and the form it wraps. */
 function settingsHarness(options) {
 	const harness = applyToFakeContext(options);
 	const seat = harness.registered.find((entry) => entry.options.name === "plugins.bundle.config");
-	return { harness, component: seat.component, face: seat.options.inject() };
+	const face = seat.options.inject();
+	// The seat renders the form under its own error boundary: the seat element's
+	// child is the form element the interaction tests mount directly.
+	const boundaryElement = seat.component({ view: "page", ...face, t });
+	return { harness, seat, boundary: boundaryElement.type, component: boundaryElement.props.children.type, face };
 }
 /** Let the component's queued writes settle. */
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -460,11 +482,26 @@ const pageProps = { settings: configured.face.settings, t };
 const summaryTree = mount(configured.component, { ...pageProps, view: "summary" }).draw();
 check("the summary view counts the overrides", textOf(summaryTree), "价格覆盖：1 项");
 
+// The seat is wrapped in its own error boundary: a crash in the form must not
+// let the slot renderer retire the entry, which would make the configuration
+// silently unreachable until a reload.
+check("the seat wraps the form in an error boundary", typeof configured.boundary?.getDerivedStateFromError, "function");
+const crashed = new configured.boundary({ children: null });
+crashed.state = configured.boundary.getDerivedStateFromError(new Error("boom"));
+check("a boundary crash renders the cause rather than nothing", textOf(crashed.render()), "boom");
+const healthy = new configured.boundary({ children: "CHILD" });
+check("the boundary passes children through while healthy", healthy.render(), "CHILD");
+
 const pageTree = mount(configured.component, { ...pageProps, view: "page" }).draw();
 checkJson("one card per override", elements(pageTree).filter((node) => node.props["data-session-cost-override"] !== undefined).map((node) => node.props["data-session-cost-override"]), ["my-gateway/qwen3-32b"]);
 check("the editor offers a save control", elements(pageTree).some((node) => node.props.className === "dshCost_button dshCost_primary"), true);
 check("the editor shows the enable switch", elements(pageTree).some((node) => node.type === "input" && node.props.type === "checkbox"), true);
 check("the editor shows the window selector", elements(pageTree).some((node) => node.type === "select"), true);
+// Text has to come from the dictionary: the real `t` falls back to the key
+// itself, so a missing entry shows on screen as a raw `settings.*` label.
+// That is exactly how a missing peak-column key shipped once.
+const strings = elements(pageTree).map((node) => node.props.children).filter((child) => typeof child === "string");
+checkJson("no label renders as a raw dictionary key", strings.filter((text) => /^(settings|dialog)\./.test(text)), []);
 check("building the editor writes nothing", configured.harness.writes.length, 0);
 
 // Saving an untouched form must not rewrite the configuration.

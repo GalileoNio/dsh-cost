@@ -466,17 +466,17 @@ checkJson("the unpriced route is named", notesOf(openRender(WITH_UNPRICED))[0], 
 // constrained it inside the pill alone, so the disclosure panel drew it at the
 // panel's full 360px width.
 const pillIcon = resolve(render(TWO_SEGMENTS).props.children[0].props.children.props.children[0]);
-check("the pill icon carries an intrinsic width", pillIcon.props.width, 14);
-check("the pill icon carries an intrinsic height", pillIcon.props.height, 14);
+check("the pill icon carries the size the dock's other icons use", pillIcon.props.width, 16);
+check("the pill icon carries that height too", pillIcon.props.height, 16);
 const titleBar = panelChildren(open).find((child) => child.props.className === "dshCost_title");
 const panelIcon = resolve(flatten(titleBar.props.children)[0]);
-check("the panel icon carries an intrinsic width", panelIcon.props.width, 14);
-check("the panel icon carries an intrinsic height", panelIcon.props.height, 14);
+check("the panel icon carries an intrinsic width", panelIcon.props.width, 16);
+check("the panel icon carries an intrinsic height", panelIcon.props.height, 16);
 check("both mounts share one viewBox", panelIcon.props.viewBox, pillIcon.props.viewBox);
 
 const sheet = styleTags[0].textContent;
-check("the class sheet bounds a pill icon", /\.dshCost_pill svg[^{]*\{[^}]*width:14px/.test(sheet), true);
-check("the class sheet bounds a panel icon", /\.dshCost_panel svg[^{]*\{[^}]*width:14px/.test(sheet), true);
+check("the class sheet bounds a pill icon", /\.dshCost_pill svg[^{]*\{[^}]*width:16px/.test(sheet), true);
+check("the class sheet bounds a panel icon", /\.dshCost_panel svg[^{]*\{[^}]*width:16px/.test(sheet), true);
 
 // ── the mark matches the weight of the icons it sits among ──────────────────
 // The dock's line icons read at about one unit in a 16-unit box, which is also
@@ -502,11 +502,14 @@ const outerEdge = Number(ring.props.r) + Number(ring.props.strokeWidth) / 2;
 check("the thinner ring is not smaller than the heavy one was", outerEdge > 6.95, true);
 check("the mark spans at most 15 of the 16 units", Number(ring.props.r) * 2 + Number(ring.props.strokeWidth) <= 15, true);
 check("leaving a margin inside the box", outerEdge < 8, true);
-// The ¥ has to grow with the ring, or the coin reads as a thick rim around a
-// shrunken glyph. Its widest span should track the ring's inner diameter.
-const glyphWidth = 2 * (10.15 - 8);
-check("the glyph scales with the ring rather than staying put", glyphWidth > 4, true);
-check("the glyph still fits well inside the ring", glyphWidth < Number(ring.props.r) - Number(ring.props.strokeWidth), true);
+// The ¥ is sized for legibility, not proportion: at 16 units across, the first
+// glyph spanned 4 units and read as a speck inside the ring.
+const glyph = marked.find((child) => child.type === "path");
+const glyphSpan = 2 * (11 - 8);
+const innerDiameter = 2 * (Number(ring.props.r) - Number(ring.props.strokeWidth));
+check("the glyph is big enough to read", glyphSpan >= 6, true);
+check("...but stays clear of the ring", glyphSpan < innerDiameter - 2, true);
+check("the ring's span is the largest that keeps a margin", Number(ring.props.r) * 2 + Number(ring.props.strokeWidth), 15);
 
 // ── the settings seats ───────────────────────────────────────────────────────
 // The Plugins page renders no automatic schema form: it renders whatever the

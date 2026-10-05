@@ -425,7 +425,10 @@ check("a group already narrowed to peak is labelled peak", segmentMeta(open, "De
 check("a group already narrowed to off-peak is labelled off-peak", segmentMeta(open, "DeepSeek-V4-Pro-0813"), "空闲时段 · 预设价 · 1 次请求");
 checkJson("totals follow the currencies present", totalsOf(open), ["¥7.12"]);
 check("the total block is labelled a total", totalLabelOf(open), "合计");
-checkJson("a preset-only disclosure notes where presets come from", notesOf(open), ["预设价来自 harness 内置模型目录，可在【插件】页本插件的配置区覆盖。"]);
+// The tray carries no standing copy: a fully priced session has nothing to
+// disclose, and the panel is short enough that every line has to earn its place.
+checkJson("a fully priced disclosure carries no note", notesOf(open), []);
+checkJson("the tray opens straight from the title rule", panelChildren(open).map((child) => child.props.className).slice(0, 3), ["dshCost_title", "dshCost_rule", "dshCost_sections"]);
 
 // An override is disclosed as custom, and the label comes from the wire.
 const OVERRIDDEN = {

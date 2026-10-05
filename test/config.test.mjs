@@ -8,8 +8,8 @@
  *
  *   node test/config.test.mjs
  */
-import { Config, NAMESPACE, apply, inject, name } from "../lib/index.js";
-import { OFFICIAL_CURRENCY, createPriceLookup } from "../lib/presets.js";
+import { Config, NAMESPACE, apply, inject, name, officialCardOf, walletCurrencyOf } from "../lib/index.js";
+import { OFFICIAL_CURRENCY, OFFICIAL_CURRENCY_USD, createPriceLookup } from "../lib/presets.js";
 import { SESSION_COST_KEY, SESSION_COST_STATE_VERSION } from "../lib/projection.js";
 
 let pass = 0;
@@ -44,9 +44,17 @@ check("injects the projection registry", JSON.stringify(inject), JSON.stringify(
  * inside an installed profile leaves the same artifact a real startup would.
  */
 /** Capture whatever one apply() registers. */
-function register(config) {
+function register(config, account) {
 	const registered = [];
-	apply({ sessionProjections: { register: (definition) => { registered.push(definition); return () => {}; } } }, config);
+	const ctx = {
+		sessionProjections: { register: (definition) => { registered.push(definition); return () => {}; } },
+		// The host asks the account service which platform bills this install; a
+		// context without the service simply never answers.
+		inject: (deps, callback) => {
+			if (account !== undefined) callback({ deepseekAccount: { getBalance: () => Promise.resolve(account) } });
+		}
+	};
+	apply(ctx, config);
 	return registered;
 }
 const defaultRegistered = register(Config({}));
@@ -124,10 +132,11 @@ const defaults = Config({});
 check("default enabled", defaults.enabled.get(), true);
 check("default period", defaults.period.get(), "auto");
 check("default currency", defaults.currency.get(), "$");
+check("the official card defaults to auto-detection", defaults.officialRates.get(), "auto");
 check("the override table starts empty", JSON.stringify(defaults.prices.get()), "{}");
 
 // ── every top-level field is volatile, or the settings page never sees it ────
-for (const field of ["enabled", "period", "currency", "prices"]) {
+for (const field of ["enabled", "period", "currency", "officialRates", "prices"]) {
 	check(`${field} resolves as a volatile handle`, typeof defaults[field]?.get, "function");
 }
 
@@ -160,6 +169,58 @@ check("zero peak rates mean no peak window", createPriceLookup({ overrides: noPe
 const withPeak = Config({ prices: { "gateway/model": { miss: 1, hit: 1, write: 1, out: 1, peak: { miss: 2, hit: 2, write: 2, out: 2 } } } });
 check("a peak window resolves when given", withPeak.prices.get()["gateway/model"].peak.miss, 2);
 check("a real peak window reaches the lookup", createPriceLookup({ overrides: withPeak.prices.get() })("gateway", "model").peak.miss, 2);
+
+// ── the official card: selected, or detected from the account's wallet ───────
+check("auto with no answer is the domestic card", officialCardOf("auto", null), "cny");
+check("auto follows a detected platform", officialCardOf("auto", "usd"), "usd");
+check("a pinned card ignores the detection", officialCardOf("cny", "usd"), "cny");
+check("a pinned card needs no detection", officialCardOf("usd", null), "usd");
+check("an unrecognised mode falls back to the default", officialCardOf("eur", null), "cny");
+check("a USD wallet is the international platform", walletCurrencyOf({ status: "ready", value: [{ currency: "USD", balance: "0" }] }), "USD");
+check("a CNY wallet is the domestic platform", walletCurrencyOf({ status: "ready", value: [{ currency: "CNY", balance: "0" }] }), "CNY");
+check("a bonus-only read still classifies", walletCurrencyOf({ status: "ready", value: [{ currency: "CNY", balance: "0" }], bonusWallets: [] }), "CNY");
+check("signed out reports no card", walletCurrencyOf(null), null);
+check("a failed read reports no card", walletCurrencyOf({ status: "failed" }), null);
+check("an unrecognised currency reports no card", walletCurrencyOf({ status: "ready", value: [{ currency: "EUR", balance: "0" }] }), null);
+check("a malformed read reports no card", walletCurrencyOf({ status: "ready", value: "nope" }), null);
+
+const usdWire = wireFor(Config({ officialRates: "usd" }), "deepseek-official", "deepseek-flash", USAGE);
+const usdGroup = Object.values(usdWire.groups)[0];
+check("a pinned USD card is wired in dollars", usdGroup.price.currency, OFFICIAL_CURRENCY_USD);
+check("...at the vendor's USD rate", usdGroup.price.rates.miss, 0.15);
+const usdPeak = Object.values(wireFor(Config({ officialRates: "usd" }), "deepseek-official", "deepseek-flash", USAGE, Date.UTC(2026, 2, 4, 2, 0, 0)).groups)[0];
+check("...with the peak window doubled", usdPeak.price.rates.miss, 0.3);
+const cnyAgain = Object.values(wireFor(Config({ officialRates: "cny" }), "deepseek-official", "deepseek-flash", USAGE).groups)[0];
+check("pinning the domestic card still quotes yuan", cnyAgain.price.currency, OFFICIAL_CURRENCY);
+
+// Auto-detection has to reach the view of a state that was already composed —
+// the same state object, so this is also what proves the view cache keys on the
+// pricing identity rather than on the state alone.
+//
+// The read is memoized per process, and every `apply` earlier in this file ran
+// against a context without an account service, so this case takes a fresh
+// module instance rather than pretending the guard is not there.
+const fresh = await import("../lib/index.js?official-card-detection");
+const detectedRegistered = [];
+fresh.apply({
+  sessionProjections: { register: (definition) => { detectedRegistered.push(definition); return () => {}; } },
+  inject: (deps, callback) => callback({
+    deepseekAccount: { getBalance: () => Promise.resolve({ status: "ready", value: [{ currency: "USD", balance: "0" }] }) }
+  })
+}, fresh.Config({}));
+const detected = detectedRegistered[0];
+const detectedState = [
+	selection("deepseek-official", "deepseek-flash", Date.UTC(2026, 2, 4, 12, 0, 0)),
+	stepStart(Date.UTC(2026, 2, 4, 12, 0, 0)),
+	message(Date.UTC(2026, 2, 4, 12, 0, 0), "deepseek-official", "deepseek-flash", USAGE),
+	stepEnd(Date.UTC(2026, 2, 4, 12, 0, 0))
+].reduce(detected.apply, detected.init({}, 0));
+const beforeAnswer = Object.values(detected.wire.view(detectedState).groups)[0];
+check("auto prices the domestic card until the account answers", beforeAnswer.price.currency, OFFICIAL_CURRENCY);
+await Promise.resolve();
+const afterAnswer = Object.values(detected.wire.view(detectedState).groups)[0];
+check("...then the detected card takes over", afterAnswer.price.currency, OFFICIAL_CURRENCY_USD);
+check("...at the detected card's rate", afterAnswer.price.rates.miss, 0.15);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

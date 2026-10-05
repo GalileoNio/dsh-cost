@@ -185,6 +185,26 @@ A session that used both a yuan-billed and a dollar-billed model shows two
 totals, `¥7.12 + $1.00`, and the dialog lists them separately. Inventing an
 exchange rate would put a number in the disclosure that no vendor ever billed.
 
+That is also why the DeepSeek official routes carry a **price-list choice**
+rather than one price. The vendor publishes one list per platform — CNY on the
+domestic one, USD on the international one — and the two are rounded
+independently (one route's pair sits at ~6.67 CNY per USD, the other's at ~6.82),
+so neither is a conversion of the other. `officialRates` picks one:
+
+| Value | Behaviour |
+|---|---|
+| `auto` (default) | Reads the wallet currency of the signed-in Platform account (`deepseekAccount.getBalance` → `CNY` / `USD`) and follows it. |
+| `cny` | Always the domestic list: ¥1 / ¥2 per 1M cache-miss, ¥0.02 / ¥0.04 cache-hit, ¥4 / ¥8 output. |
+| `usd` | Always the international list: $0.15 / $0.30, $0.003 / $0.006, $0.60 / $1.20. |
+
+There is no cheaper signal inside the Harness: the DeepSeek adapter is configured
+with a credential reference rather than an endpoint, and both platforms answer on
+the same origin, so the wallet is what distinguishes them. `auto` therefore costs
+one Platform read, started the first time a price is actually needed and
+memoized for the process; a profile without the account plugin — or one whose
+account cannot be classified — keeps the domestic list. Pin `cny` or `usd` to
+skip the read entirely.
+
 ## What it is not
 
 - **List prices, not your bill.** Discounts, promotions, and account-level terms
@@ -207,11 +227,11 @@ npm test
 `npm test` runs all five, and each also runs alone:
 
 ```
-node test/presets.test.mjs      # 49 checks: catalog derivation and precedence
+node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 125 checks: the browser half, the tray and its settings page
-node test/config.test.mjs       # 44 checks: the schema and the live wiring
+node test/bundle.test.mjs       # 130 checks: the browser half, the tray and its settings page
+node test/config.test.mjs       # 65 checks: the schema, the live wiring and the billing card
 ```
 
 Nothing is mocked away that matters: the suites import the real modules and

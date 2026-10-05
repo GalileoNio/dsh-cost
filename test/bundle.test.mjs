@@ -573,6 +573,7 @@ check("the settings seats are localized", seats.every((entry) => entry.options.l
 const CONFIGURED = {
 	enabled: true,
 	period: "auto",
+	officialRates: "auto",
 	currency: "¥",
 	prices: {
 		"my-gateway/qwen3-32b": {
@@ -698,6 +699,27 @@ const customTree = mount(custom.component, { ...custom.face, t, view: "page" }).
 check("an unlisted symbol gets a text box", elements(customTree).find((node) => node.props.className === "dshCost_input dshCost_currency")?.props.value, "元");
 const customSelect = elements(customTree).find((node) => node.type === "select" && elements(node).some((child) => child.props.value === "\u0000custom"));
 check("the select reports the custom choice", customSelect.props.value, "\u0000custom");
+
+// ── the official price list control ──────────────────────────────────────────
+const cards = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
+const cardsMount = mount(cards.component, { ...cards.face, t, view: "page" });
+let cardsTree = cardsMount.draw();
+const cardsSelect = elements(cardsTree).find((node) => node.type === "select" && elements(node).some((child) => child.props.value === "cny"));
+check("the page offers the official price lists", cardsSelect !== undefined, true);
+checkJson("...including automatic detection", elements(cardsSelect).filter((child) => child.type === "option").map((child) => child.props.value), ["auto", "cny", "usd"]);
+check("the resolved choice is selected", cardsSelect.props.value, "auto");
+cardsSelect.props.onChange({ target: { value: "usd" } });
+cardsTree = cardsMount.draw();
+elements(cardsTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
+await flush();
+checkJson("picking a list writes it", cards.harness.writes.filter((write) => write[0] === "officialRates"), [["officialRates", "usd"]]);
+
+// Saving an untouched form still writes nothing once the field is resolved.
+const settled = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
+const settledMount = mount(settled.component, { ...settled.face, t, view: "page" });
+elements(settledMount.draw()).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
+await flush();
+check("a resolved default is not restated on save", settled.harness.writes.length, 0);
 
 // ── importing a configured model ─────────────────────────────────────────────
 const CATALOG = [

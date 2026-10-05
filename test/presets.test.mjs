@@ -7,7 +7,7 @@
  *
  *   node test/presets.test.mjs
  */
-import { CATALOG_CURRENCY, OFFICIAL_CURRENCY, catalogGeneratedAt, catalogPresets, createPriceLookup } from "../lib/presets.js";
+import { CATALOG_CURRENCY, OFFICIAL_CURRENCY, OFFICIAL_CURRENCY_USD, catalogGeneratedAt, catalogPresets, createPriceLookup } from "../lib/presets.js";
 
 let pass = 0;
 let fail = 0;
@@ -119,6 +119,40 @@ check("non-finite override rates clamp to 0", malformed("bad", "two").base.out, 
 check("a null override is ignored for a route the catalog does not know", malformed("bad", "one"), null);
 
 // A broken catalog must narrow what is priced, never take the plugin down.
+// ── the two official cards are selected, never converted ─────────────────────
+// DeepSeek publishes one list per platform and rounds each on its own, so the
+// ratios differ slightly. Deriving one from the other would invent a rate no
+// invoice used; the plugin carries both and lets the caller pick.
+const cny = createPriceLookup({ officialCard: "cny" });
+const usd = createPriceLookup({ officialCard: "usd" });
+const FLASH = "deepseek-flash";
+check("the domestic card prices in yuan", cny("deepseek-official", FLASH).currency, OFFICIAL_CURRENCY);
+check("...at the vendor's CNY numbers", cny("deepseek-official", FLASH).base.miss, 1);
+check("...with the peak window doubled", cny("deepseek-official", FLASH).peak.out, 8);
+check("the international card prices in dollars", usd("deepseek-official", FLASH).currency, OFFICIAL_CURRENCY_USD);
+check("...at the vendor's USD numbers", usd("deepseek-official", FLASH).base.miss, 0.15);
+check("...with the peak window doubled", usd("deepseek-official", FLASH).peak.out, 1.2);
+check("...on the second route too", usd("deepseek-official", "deepseek-v4-pro").peak.miss, 1.32);
+check("...and its cache-hit rate", usd("deepseek-official", "deepseek-v4-pro").base.hit, 0.022);
+const cnyRatio = cny("deepseek-official", FLASH).base.miss / usd("deepseek-official", FLASH).base.miss;
+const usdRatio = cny("deepseek-official", "deepseek-v4-pro").base.miss / usd("deepseek-official", "deepseek-v4-pro").base.miss;
+check("the cards are rounded independently, so neither is a conversion", cnyRatio !== usdRatio, true);
+check("the default card is the domestic one", createPriceLookup({})("deepseek-official", FLASH).currency, OFFICIAL_CURRENCY);
+check("an unknown card falls back to the default", createPriceLookup({ officialCard: "eur" })("deepseek-official", FLASH).currency, OFFICIAL_CURRENCY);
+check("selecting a card never restates the catalog", usd("anthropic", "claude-fable-5").currency, CATALOG_CURRENCY);
+check("an override outranks either card", createPriceLookup({
+  officialCard: "usd",
+  overrides: { "deepseek-official/deepseek-flash": { currency: "€", label: "", miss: 9, hit: 1, write: 9, out: 9 } }
+})("deepseek-official", FLASH).currency, "€");
+
+// The Host detects the billing platform asynchronously, so the resolver has to
+// be able to change its answer between two lookups.
+let lateCard = "cny";
+const late = createPriceLookup({ officialCard: () => lateCard });
+check("a late card answer is honoured", late("deepseek-official", FLASH).currency, OFFICIAL_CURRENCY);
+lateCard = "usd";
+check("...and the next lookup follows it", late("deepseek-official", FLASH).currency, OFFICIAL_CURRENCY_USD);
+
 const emptyCatalog = createPriceLookup({ catalog: {} });
 check("an empty catalog leaves only the official routes", emptyCatalog("anthropic", "claude-fable-5"), null);
 check("an empty catalog still prices the official routes", emptyCatalog("deepseek-official", "deepseek-v4-pro").base.out, 13.5);

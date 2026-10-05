@@ -98,17 +98,26 @@ the plugin's settings.
 
 ### Maintaining the table
 
-`Settings → Plugins → Session cost` renders the `session-cost` settings
-namespace, which writes back to the profile patch by entry id. Overrides are
-keyed `<provider>/<model>`, or bare `<model>` to match any provider; a
-qualified key wins.
+**Settings → Plugins → this plugin's card.** The editor is rendered by the
+plugin itself: the Plugins page draws no automatic schema form, so a plugin with
+settings claims a seat and draws its own. This one claims two, so the same form
+is reachable from either:
+
+| Seat | Key | Where it appears |
+|---|---|---|
+| `plugins.bundle.config` | `dsh-client-ui-session-cost` | The bundle's own page, between its description and its rows |
+| `plugins.row.config` | `dsh-client-ui-session-cost#session-cost` | The `session-cost` row's page |
+
+Every accepted write goes through the `session-cost` settings namespace's
+`ConfigForm`, which lands it in the profile patch by entry id. The editor writes
+only the fields you actually changed.
 
 | Field | Meaning |
 |---|---|
 | `enabled` | Render the pill at all. Off registers no projection, so no key reaches the browser. |
 | `period` | `auto` charges each segment the window it fell in; `peak` / `offpeak` re-price every segment into one window. |
 | `currency` | Symbol for overrides that name none. Presets carry their own: the catalog is `$`, DeepSeek official is `¥`. |
-| `prices` | The override table. |
+| `prices` | The override table, keyed `<provider>/<model>` or bare `<model>`; a qualified key wins. |
 
 Each override needs all four base rates. `peak` cannot be omitted — Schemastery
 resolves a nested object through its required members, so **all-zero peak rates
@@ -155,7 +164,7 @@ npm test
 ```
 node test/presets.test.mjs      # 49 checks: catalog derivation and precedence
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 45 checks: the browser half
+node test/bundle.test.mjs       # 68 checks: the browser half and its settings page
 node test/config.test.mjs       # 44 checks: the schema and the live wiring
 ```
 
@@ -171,9 +180,11 @@ stub only React and the DOM, so a passing run means the shipped code works.
   independently reimplemented `tokenUsage` fold — then pins how a price is
   narrowed to one rate set (window, tier threshold, `period` override).
 - `bundle.test.mjs` materializes the real `lib/client.js` against stubbed React
-  and DOM and drives the real component: per-segment arithmetic, mixed
-  currencies, disclosed incompleteness, the icon's intrinsic size in both mount
-  contexts, and every hidden case.
+  and DOM and drives the real components through a stateful mount: per-segment
+  arithmetic, mixed currencies, disclosed incompleteness, the icon's intrinsic
+  size in both mount contexts, and the settings page end to end — the seats it
+  claims, the cards it draws, and the fact that a save writes only what
+  changed.
 - `config.test.mjs` checks schema defaults and rejections, the `.volatile()`
   markers the settings page depends on, and then drives the definition `apply`
   actually registers — the only place the schema, the presets, and the fold meet.

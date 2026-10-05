@@ -62,23 +62,107 @@ const react = {
 	useRef: (value) => ({ current: value === undefined ? null : value }),
 	useState: (value) => {
 		const initial = typeof value === "function" ? value() : value;
-		return [harnessOpen && initial === false ? true : initial, () => {}];
+		// Outside a mount the pill cases only need the initial value.
+		if (stateSlots === null) return [harnessOpen && initial === false ? true : initial, () => {}];
+		const at = stateCursor;
+		stateCursor += 1;
+		// Capture this render's slots: an async setter (a queued save) lands after
+		// the draw loop has cleared the module-level cursor.
+		const slots = stateSlots;
+		if (!(at in slots)) slots[at] = initial;
+		return [slots[at], (next) => {
+			slots[at] = typeof next === "function" ? next(slots[at]) : next;
+			stateDirty = true;
+		}];
 	},
 	useCallback: (fn) => fn,
 	useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
 	useLayoutEffect: () => {},
-	useEffect: () => {}
+	useEffect: (fn) => {
+		// Inside a mount, run it eagerly so a state write during the effect is
+		// picked up by the draw loop; outside one it stays inert.
+		if (stateSlots === null) return;
+		fn();
+	}
 };
+
+/** Per-render hook slots, shared across the renders of one mount. */
+let stateSlots = null;
+let stateCursor = 0;
+let stateDirty = false;
+/**
+ * Render a hook-using component repeatedly until its state settles, the way
+ * React does, so a test can drive an input and then observe the re-render.
+ * @param component - the component function.
+ * @param props - its props.
+ * @returns a drawer that re-renders on demand, plus the raw state slots.
+ */
+function mount(component, props) {
+	const slots = [];
+	const draw = () => {
+		let tree = null;
+		for (let pass = 0; pass < 8; pass += 1) {
+			stateSlots = slots;
+			stateCursor = 0;
+			stateDirty = false;
+			tree = component(props);
+			stateSlots = null;
+			if (stateDirty !== true) break;
+		}
+		return tree;
+	};
+	return { draw, slots };
+}
+/** Every element in a tree, resolving function components as React would. */
+function elements(node, out = []) {
+	if (Array.isArray(node)) {
+		for (const child of node) elements(child, out);
+		return out;
+	}
+	if (node === null || node === undefined || typeof node !== "object") return out;
+	out.push(node);
+	if (typeof node.type === "function") {
+		elements(node.type(node.props), out);
+		return out;
+	}
+	elements(node.props?.children, out);
+	return out;
+}
 function bundleRequire(specifier) {
 	if (specifier === "react") return react;
 	if (specifier === "react-dom") return { createPortal: (node) => node };
 	throw new Error(`bundle required an unexpected module: ${specifier}`);
 }
 
-/** Materialize the bundle, apply it, and return the registration record. */
-function applyToFakeContext() {
+/**
+ * Materialize the bundle and apply it to a recording fake Context.
+ * @param options - the settings value the stubbed ConfigForm should serve.
+ * @returns the registration record, the call log, and the write log.
+ */
+function applyToFakeContext(options = {}) {
 	const log = [];
-	let captured;
+	const registered = [];
+	const writes = [];
+	const settingsState = {
+		status: options.settingsValue === undefined ? "loading" : "ready",
+		writable: true,
+		mode: "host",
+		revision: 1,
+		value: options.settingsValue
+	};
+	const settings = {
+		getSnapshot: () => settingsState,
+		subscribe: () => () => {},
+		set: (field, value) => {
+			writes.push([field, value]);
+			return Promise.resolve(options.refuseWrites !== true);
+		},
+		unset: (field) => {
+			writes.push([field, null]);
+			return Promise.resolve(options.refuseWrites !== true);
+		},
+		mutate: () => Promise.resolve(options.refuseWrites !== true)
+	};
 	const ctx = {
 		effect(fn, label) {
 			log.push(["effect", label]);
@@ -91,14 +175,21 @@ function applyToFakeContext() {
 				return () => {};
 			}
 		},
+		inject(deps, callback) {
+			log.push(["ctx.inject", deps.join(",")]);
+			callback({
+				slots: ctx.slots,
+				configForms: { get: () => settings }
+			});
+		},
 		slots: {
 			inject(slot, callback) {
 				log.push(["slots.inject", slot]);
 				callback();
 			},
-			register(options, component) {
-				log.push(["slots.register", options.name, options.id, options.order, options.locale]);
-				captured = { options, component };
+			register(registration, component) {
+				log.push(["slots.register", registration.name, registration.id ?? registration.key, registration.order, registration.locale]);
+				registered.push({ options: registration, component });
 				return () => {};
 			}
 		}
@@ -106,7 +197,8 @@ function applyToFakeContext() {
 	vm.runInThisContext(LOADED, { filename: BUNDLE });
 	const exports_ = registration.factory(bundleRequire);
 	exports_.apply(ctx);
-	return { exports_, log, captured };
+	const captured = registered.find((entry) => entry.options.name === "conversation.composer.dock");
+	return { exports_, log, registered, captured, writes, settingsState };
 }
 
 // ── registration contract ────────────────────────────────────────────────────
@@ -325,6 +417,106 @@ check("both mounts share one viewBox", panelIcon.props.viewBox, pillIcon.props.v
 const sheet = styleTags[0].textContent;
 check("the class sheet bounds a pill icon", /\.dshCost_pill svg[^{]*\{[^}]*width:14px/.test(sheet), true);
 check("the class sheet bounds a panel icon", /\.dshCost_panel svg[^{]*\{[^}]*width:14px/.test(sheet), true);
+
+// ── the settings seats ───────────────────────────────────────────────────────
+// The Plugins page renders no automatic schema form: it renders whatever the
+// owning plugin claims for these seats, so a plugin with settings must claim
+// one or its configuration is invisible.
+const seats = applied.registered.filter((entry) => entry.options.name !== "conversation.composer.dock");
+check("the bundle-config seat is claimed under the package name", seats.some((entry) => entry.options.name === "plugins.bundle.config" && entry.options.key === "dsh-client-ui-session-cost"), true);
+check("the row-config seat is claimed under package#row", seats.some((entry) => entry.options.name === "plugins.row.config" && entry.options.key === "dsh-client-ui-session-cost#session-cost"), true);
+check("the settings seats ask for the shared config form", applied.log.some((row) => row[0] === "ctx.inject" && row[1] === "configForms"), true);
+check("the settings seats are localized", seats.every((entry) => entry.options.locale === "session-cost"), true);
+
+// ── the settings page ────────────────────────────────────────────────────────
+const CONFIGURED = {
+	enabled: true,
+	period: "auto",
+	currency: "¥",
+	prices: {
+		"my-gateway/qwen3-32b": {
+			currency: "$",
+			label: "My Qwen",
+			miss: 0.2,
+			hit: 0.02,
+			write: 0.2,
+			out: 0.4,
+			peak: { miss: 0, hit: 0, write: 0, out: 0 }
+		}
+	}
+};
+/** Apply once and hand back the settings seat's component plus its write log. */
+function settingsHarness(options) {
+	const harness = applyToFakeContext(options);
+	const seat = harness.registered.find((entry) => entry.options.name === "plugins.bundle.config");
+	return { harness, component: seat.component, face: seat.options.inject() };
+}
+/** Let the component's queued writes settle. */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+const configured = settingsHarness({ settingsValue: CONFIGURED });
+const pageProps = { settings: configured.face.settings, t };
+
+const summaryTree = mount(configured.component, { ...pageProps, view: "summary" }).draw();
+check("the summary view counts the overrides", textOf(summaryTree), "价格覆盖：1 项");
+
+const pageTree = mount(configured.component, { ...pageProps, view: "page" }).draw();
+checkJson("one card per override", elements(pageTree).filter((node) => node.props["data-session-cost-override"] !== undefined).map((node) => node.props["data-session-cost-override"]), ["my-gateway/qwen3-32b"]);
+check("the editor offers a save control", elements(pageTree).some((node) => node.props.className === "dshCost_button dshCost_primary"), true);
+check("the editor shows the enable switch", elements(pageTree).some((node) => node.type === "input" && node.props.type === "checkbox"), true);
+check("the editor shows the window selector", elements(pageTree).some((node) => node.type === "select"), true);
+check("building the editor writes nothing", configured.harness.writes.length, 0);
+
+// Saving an untouched form must not rewrite the configuration.
+const untouched = mount(configured.component, { ...pageProps, view: "page" });
+elements(untouched.draw()).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
+await flush();
+check("saving an untouched form writes nothing", configured.harness.writes.length, 0);
+check("an untouched save reports saved", elements(untouched.draw()).find((node) => node.props.className === "dshCost_status").props.children, "已保存");
+
+// Editing one rate writes only the prices field, and only the edited value.
+const edited = settingsHarness({ settingsValue: CONFIGURED });
+const editedProps = { settings: edited.face.settings, t };
+const mounted = mount(edited.component, { ...editedProps, view: "page" });
+let editedTree = mounted.draw();
+const card = elements(editedTree).find((node) => node.props["data-session-cost-override"] !== undefined);
+const cardInputs = elements(card).filter((node) => node.type === "input");
+check("a card exposes the key, currency, label, four rates and four peak rates", cardInputs.length, 11);
+cardInputs[3].props.onChange({ target: { value: "1.5" } });
+editedTree = mounted.draw();
+elements(editedTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
+await flush();
+check("editing one rate writes exactly one field", edited.harness.writes.length, 1);
+check("the write targets the prices table", edited.harness.writes[0][0], "prices");
+check("the edited rate reaches the write", edited.harness.writes[0][1]["my-gateway/qwen3-32b"].miss, 1.5);
+check("the untouched rates survive", JSON.stringify([edited.harness.writes[0][1]["my-gateway/qwen3-32b"].hit, edited.harness.writes[0][1]["my-gateway/qwen3-32b"].out]), JSON.stringify([0.02, 0.4]));
+check("a blank number box means zero", edited.harness.writes[0][1]["my-gateway/qwen3-32b"].peak.miss, 0);
+
+// Adding a row writes a second entry, and a refused write is reported.
+const added = settingsHarness({ settingsValue: CONFIGURED });
+const addedMounted = mount(added.component, { settings: added.face.settings, t, view: "page" });
+let addedTree = addedMounted.draw();
+elements(addedTree).filter((node) => node.props.className === "dshCost_button")[0].props.onClick();
+addedTree = addedMounted.draw();
+check("adding a row shows a second card", elements(addedTree).filter((node) => node.props["data-session-cost-override"] !== undefined).length, 2);
+elements(addedTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
+await flush();
+check("an unnamed added row is not written", added.harness.writes.length, 0);
+
+const refused = settingsHarness({ settingsValue: CONFIGURED, refuseWrites: true });
+const refusedMounted = mount(refused.component, { settings: refused.face.settings, t, view: "page" });
+const refusedCard = elements(refusedMounted.draw()).find((node) => node.props["data-session-cost-override"] !== undefined);
+elements(refusedCard).filter((node) => node.type === "input")[3].props.onChange({ target: { value: "2" } });
+const refusedTree = refusedMounted.draw();
+elements(refusedTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
+await flush();
+check("a refused write reports failure", elements(refusedMounted.draw()).find((node) => node.props.className === "dshCost_status").props.children, "保存失败");
+
+// An empty table, a loading namespace, and an unavailable one each say so.
+const emptyHarness = settingsHarness({ settingsValue: { enabled: true, period: "auto", currency: "$", prices: {} } });
+check("an empty override table says so", textOf(mount(emptyHarness.component, { settings: emptyHarness.face.settings, t, view: "page" }).draw()).includes("暂无覆盖"), true);
+const loadingHarness = settingsHarness({});
+check("a loading namespace says so", elements(mount(loadingHarness.component, { settings: loadingHarness.face.settings, t, view: "page" }).draw()).find((node) => node.props.className === "dshCost_settingsHint").props.children, "读取设置…");
 
 // ── hidden cases ─────────────────────────────────────────────────────────────
 check("no projection renders nothing", render(undefined), null);

@@ -45,12 +45,26 @@ No `config` is written there on purpose: the override table starts empty because
 presets cover the catalog, and the settings page writes any override back by
 entry id.
 
-> **Plugin source changes.** `lib/client.js` is re-read from disk on every page
-> load, so a client-side change needs only a page refresh. A change to
-> `lib/index.js`, `lib/presets.js`, or `lib/projection.js` needs a Harness
-> restart: Node imports a module once per process, and the profile watcher
-> follows `cordis.patch.yml`, not a package directory. Installing a *new*
-> package loads it fresh, which is why this install took effect without one.
+> **Plugin source changes need no restart.** `lib/client.js` is re-read from disk
+> on every page load, so a client-side change needs only a page refresh. The Host
+> half hot-reloads too, through the Harness's own `@deepseek-ai/dsh-hmr`: it clears
+> the changed module from Node's ESM and CJS caches, re-imports it, and swaps the
+> new exports into the live fiber, rolling back if the new module throws.
+>
+> It only watches what it is told to, and `dsh-base` ships that entry with
+> `root: []` — which is why a Host-side edit used to need a restart. One entry in
+> the profile's `cordis.patch.yml` closes the gap:
+>
+> ```yaml
+> - id: hmr
+>   name: "@deepseek-ai/dsh-hmr"
+>   config:
+>     base: /Users/kelonl/.dsh/profiles/plugins
+>     root:
+>       - .
+> ```
+>
+> The default ignore list still skips `node_modules` inside that directory.
 
 ## How the amount is computed
 

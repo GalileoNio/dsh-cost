@@ -153,6 +153,51 @@ function bundleRequire(specifier) {
 }
 
 /**
+ * A stand-in for the settings transport's `ConfigForm`.
+ *
+ * The shipped one is a class whose methods read `this.store`, and React calls
+ * `subscribe` and `getSnapshot` detached. Shaping the stub the same way is what
+ * makes that failure visible here: an unbound pass-through throws
+ * "Cannot read properties of undefined (reading 'store')", which is exactly how
+ * the settings page died in the browser while every arrow-function stub kept
+ * passing.
+ */
+class StubConfigForm {
+	constructor(value, refuseWrites) {
+		this.store = {
+			snapshot: {
+				status: value === undefined ? "loading" : "ready",
+				writable: true,
+				mode: "host",
+				revision: 1,
+				value
+			}
+		};
+		this.listeners = new Set();
+		this.writes = [];
+		this.refuseWrites = refuseWrites === true;
+	}
+	getSnapshot() {
+		return this.store.snapshot;
+	}
+	subscribe(listener) {
+		this.listeners.add(listener);
+		return () => this.listeners.delete(listener);
+	}
+	set(field, value) {
+		this.writes.push([field, value]);
+		return Promise.resolve(!this.refuseWrites);
+	}
+	unset(field) {
+		this.writes.push([field, null]);
+		return Promise.resolve(!this.refuseWrites);
+	}
+	mutate() {
+		return Promise.resolve(!this.refuseWrites);
+	}
+}
+
+/**
  * Materialize the bundle and apply it to a recording fake Context.
  * @param options - the settings value the stubbed ConfigForm should serve.
  * @returns the registration record, the call log, and the write log.
@@ -160,28 +205,9 @@ function bundleRequire(specifier) {
 function applyToFakeContext(options = {}) {
 	const log = [];
 	const registered = [];
-	const writes = [];
-	const registeredDictionaries = new Map();
-	const settingsState = {
-		status: options.settingsValue === undefined ? "loading" : "ready",
-		writable: true,
-		mode: "host",
-		revision: 1,
-		value: options.settingsValue
-	};
-	const settings = {
-		getSnapshot: () => settingsState,
-		subscribe: () => () => {},
-		set: (field, value) => {
-			writes.push([field, value]);
-			return Promise.resolve(options.refuseWrites !== true);
-		},
-		unset: (field) => {
-			writes.push([field, null]);
-			return Promise.resolve(options.refuseWrites !== true);
-		},
-		mutate: () => Promise.resolve(options.refuseWrites !== true)
-	};
+	const settings = new StubConfigForm(options.settingsValue, options.refuseWrites);
+	const writes = settings.writes;
+	const settingsState = settings.getSnapshot();
 	const ctx = {
 		effect(fn, label) {
 			log.push(["effect", label]);
@@ -191,15 +217,7 @@ function applyToFakeContext(options = {}) {
 		locale: {
 			register(ns, dictionaries) {
 				log.push(["locale", ns, dictionaries]);
-				registeredDictionaries.set(ns, dictionaries);
 				return () => {};
-			},
-			// bind() caches per namespace and resolves lazily, so a bound `t` may
-			// exist before the dictionary lands.
-			bind: (ns) => (key, params) => {
-				const bundles = registeredDictionaries.get(ns) ?? {};
-				const text = bundles.zh?.[key] ?? bundles.en?.[key] ?? key;
-				return params === undefined ? text : text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match));
 			}
 		},
 		inject(deps, callback) {
@@ -454,17 +472,6 @@ check("the bundle-config seat is claimed under the package name", seats.some((en
 check("the row-config seat is claimed under package#row", seats.some((entry) => entry.options.name === "plugins.row.config" && entry.options.key === "dsh-client-ui-session-cost#session-cost"), true);
 check("the settings seats ask for the shared config form", applied.log.some((row) => row[0] === "ctx.inject" && row[1] === "configForms"), true);
 check("the settings seats are localized", seats.every((entry) => entry.options.locale === "session-cost"), true);
-
-// The discoverable seat: a page of its own in the Plugins settings section,
-// which the section owner renders as a tab beside the plugin list. The bundle
-// card seats above are a second way in, not the primary one.
-const tabSeat = seats.find((entry) => entry.options.name === "settings.plugins.tab");
-check("the Plugins-section tab is claimed", tabSeat !== undefined, true);
-check("the tab uses this plugin's own cell", tabSeat?.options.id, "session-cost");
-check("the tab orders after the shipped plugin list", tabSeat.options.order > 10, true);
-check("the tab label is a thunk, so it follows the active locale", typeof tabSeat.options.label, "function");
-check("the tab label resolves to dictionary text", tabSeat.options.label(), "会话花费");
-check("the tab carries the same form face", typeof tabSeat.options.inject().settings?.getSnapshot, "function");
 
 // ── the settings page ────────────────────────────────────────────────────────
 const CONFIGURED = {

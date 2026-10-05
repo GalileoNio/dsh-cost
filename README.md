@@ -98,22 +98,26 @@ the plugin's settings.
 
 ### Maintaining the table
 
-**Settings → Plugins → the "Session cost" tab.** No automatic schema form exists
-in this build: the Plugins page renders only what a plugin claims for itself and
-draws on its own. This one claims three seats, so the same form is reachable from
-any of them — the first is a page of its own and the discoverable one:
+**Plugins (the sidebar entry) → this plugin's card.** No automatic schema form
+exists in this build: the Plugins page renders only what a plugin claims for
+itself and draws on its own. This one claims two seats, so the same form is
+reachable from either:
 
 | Seat | Key | Where it appears |
 |---|---|---|
-| `settings.plugins.tab` | `session-cost` | **A page of its own** in the Plugins settings section, rendered as a tab beside the plugin list |
 | `plugins.bundle.config` | `dsh-client-ui-session-cost` | The bundle card's page, between its description and its rows |
-| `plugins.row.config` | `dsh-client-ui-session-cost#session-cost` | The `session-cost` row's page |
+| `plugins.row.config` | `dsh-client-ui-session-cost#session-cost` | The `session-cost` row's page, which also gains a configure control |
 
-A crash inside the form is contained by the plugin's own error boundary and
-printed in place. That matters: the slot renderer retires a crashed entry from
-its cell, one-shot, and never puts it back — so without the boundary an
-exception here would make the configuration silently vanish and read as "this
-plugin has no settings".
+Two things about that page cost real debugging time here and are worth knowing:
+
+- **The form is read through bound readers.** `ConfigForm`'s `getSnapshot` and
+  `subscribe` are class methods that read `this.store`, and React calls whatever
+  it is handed *detached*. Passing `form.getSnapshot` through directly throws
+  `Cannot read properties of undefined (reading 'store')` on the first render.
+- **A crash is contained and printed.** The slot renderer retires a crashed entry
+  from its cell, one-shot, and never puts it back — so without the plugin's own
+  error boundary an exception here would make the configuration silently vanish
+  and read as "this plugin has no settings".
 
 Every accepted write goes through the `session-cost` settings namespace's
 `ConfigForm`, which lands it in the profile patch by entry id. The editor writes
@@ -171,7 +175,7 @@ npm test
 ```
 node test/presets.test.mjs      # 49 checks: catalog derivation and precedence
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 78 checks: the browser half and its settings page
+node test/bundle.test.mjs       # 72 checks: the browser half and its settings page
 node test/config.test.mjs       # 44 checks: the schema and the live wiring
 ```
 
@@ -191,7 +195,9 @@ stub only React and the DOM, so a passing run means the shipped code works.
   arithmetic, mixed currencies, disclosed incompleteness, the icon's intrinsic
   size in both mount contexts, and the settings page end to end — the seats it
   claims, the cards it draws, and the fact that a save writes only what
-  changed.
+  changed. Its `ConfigForm` stub is a class whose methods read `this.store`, so
+  the detached method references React hands to `useSyncExternalStore` fail the
+  suite exactly as they fail in the browser.
 - `config.test.mjs` checks schema defaults and rejections, the `.volatile()`
   markers the settings page depends on, and then drives the definition `apply`
   actually registers — the only place the schema, the presets, and the fold meet.

@@ -1030,6 +1030,16 @@ check("...and keeping the words it did not replace", textOf(segmentLabelNode(mar
 // along and the sheet picks: the theme sets the attribute, the plugin never has
 // to know which one is active.
 checkJson("the mark carries both surface variants", deepSeekMarks[0].props.children.map((node) => node.props.className), ["dshCost_markLight", "dshCost_markDark"]);
+// A mark must not move the line it sits in. A flex container's baseline is the
+// baseline of its first item that takes part in baseline alignment, and with every
+// item centred none take part: the container then synthesises one from its first
+// item's margin box, i.e. the icon's bottom edge. That edge lands on the text
+// baseline, so the line box grew and the name rode up — but only once a label drew
+// a mark, which is why it looked like the setting changed the row's height.
+// The text item owns the baseline instead, and the mark centres on it.
+check("the label's baseline comes from its text, not its mark", /\.dshCost_labelText\{[^}]*align-items:baseline/.test(sheet), true);
+check("...so the mark is centred rather than baseline-aligned", /\.dshCost_labelMarks\{[^}]*align-self:center/.test(sheet), true);
+check("...and the mark keeps the size the other icons use", /\.dshCost_pill svg,\.dshCost_panel svg\{[^}]*width:14px;height:14px/.test(sheet), true);
 check("...the dark one recoloured for it", deepSeekMarks[0].props.children[1].props.dangerouslySetInnerHTML.__html.includes("#fff"), true);
 check("the disclosure still stacks two children per segment head", sectionsOf(markedTree).every((section) => section.props.children[0].props.children.length === 2), true);
 check("the mark stays out of the accessible name", deepSeekMarks[0].props["aria-hidden"], true);

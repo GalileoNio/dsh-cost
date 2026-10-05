@@ -357,7 +357,7 @@ node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/fx.test.mjs           # 32 checks: the reference rates behind the converted figure
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 245 checks: the browser half, the tray and its settings page
+node test/bundle.test.mjs       # 248 checks: the browser half, the tray and its settings page
 node test/config.test.mjs       # 81 checks: the schema, the live wiring and the billing card
 ```
 

@@ -1,4 +1,4 @@
-# dsh-client-ui-session-cost
+# dsh-session-cost
 
 Adds one pill to the Session's bottom statistics strip — the composer dock that
 already shows turn/step counts, tokens per second, token totals, and cache-hit
@@ -17,10 +17,10 @@ This is a **bundle**: installing it adds a Loader entry, and the entry is what
 carries the plugin, so nothing in the Harness is patched by hand.
 
 ```bash
-git clone git@github.com:GalileoNio/dsh-cost.git "$HOME/.dsh/profiles/plugins/dsh-cost"
+git clone git@github.com:GalileoNio/dsh-cost.git "$HOME/.dsh/profiles/plugins/dsh-session-cost"
 ```
 
-Then either install from that path in **Settings → Plugins**, or run the same
+Then either install from that path on the **Plugins** page, or run the same
 operation programmatically with `plugin_manager` `install_bundle` and the
 absolute path. The manager adds the package as a profile dependency, appends it
 to `dsh.profile.bundles`, and applies it live; uninstalling removes all three.
@@ -38,7 +38,7 @@ Its `cordis.patch.yml` inserts the one row over the profile root:
 ```yaml
 - insert:
     - id: session-cost
-      name: dsh-client-ui-session-cost
+      name: dsh-session-cost
 ```
 
 No `config` is written there on purpose: the override table starts empty because
@@ -105,8 +105,8 @@ reachable from either:
 
 | Seat | Key | Where it appears |
 |---|---|---|
-| `plugins.bundle.config` | `dsh-client-ui-session-cost` | The bundle card's page, between its description and its rows |
-| `plugins.row.config` | `dsh-client-ui-session-cost#session-cost` | The `session-cost` row's page, which also gains a configure control |
+| `plugins.bundle.config` | `dsh-session-cost` | The bundle card's page, between its description and its rows |
+| `plugins.row.config` | `dsh-session-cost#session-cost` | The `session-cost` row's page, which also gains a configure control |
 
 Two things about that page cost real debugging time here and are worth knowing:
 

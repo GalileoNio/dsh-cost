@@ -254,7 +254,7 @@ function applyToFakeContext(options = {}) {
 
 // ── registration contract ────────────────────────────────────────────────────
 const applied = applyToFakeContext();
-check("registration id", registration.id, "dsh-client-ui-session-cost");
+check("registration id", registration.id, "dsh-session-cost");
 check("exports.apply is a function", typeof applied.exports_.apply, "function");
 check("exports.inject", JSON.stringify(applied.exports_.inject), JSON.stringify(["slots", "locale"]));
 check("style tag injected once", styleTags.length, 1);
@@ -394,7 +394,7 @@ check("a group already narrowed to peak is labelled peak", segmentMeta(open, "De
 check("a group already narrowed to off-peak is labelled off-peak", segmentMeta(open, "DeepSeek-V4-Pro-0813"), "空闲时段 · 预设价 · 1 次请求");
 checkJson("totals follow the currencies present", totalsOf(open), ["¥7.12"]);
 check("the total block is labelled a total", totalLabelOf(open), "合计");
-checkJson("a preset-only disclosure notes where presets come from", notesOf(open), ["预设价来自 harness 内置模型目录，可在 Settings → Plugins → Session cost 覆盖。"]);
+checkJson("a preset-only disclosure notes where presets come from", notesOf(open), ["预设价来自 harness 内置模型目录，可在【插件】页本插件的配置区覆盖。"]);
 
 // An override is disclosed as custom, and the label comes from the wire.
 const OVERRIDDEN = {
@@ -474,8 +474,8 @@ check("the class sheet bounds a panel icon", /\.dshCost_panel svg[^{]*\{[^}]*wid
 // owning plugin claims for these seats, so a plugin with settings must claim
 // one or its configuration is invisible.
 const seats = applied.registered.filter((entry) => entry.options.name !== "conversation.composer.dock");
-check("the bundle-config seat is claimed under the package name", seats.some((entry) => entry.options.name === "plugins.bundle.config" && entry.options.key === "dsh-client-ui-session-cost"), true);
-check("the row-config seat is claimed under package#row", seats.some((entry) => entry.options.name === "plugins.row.config" && entry.options.key === "dsh-client-ui-session-cost#session-cost"), true);
+check("the bundle-config seat is claimed under the package name", seats.some((entry) => entry.options.name === "plugins.bundle.config" && entry.options.key === "dsh-session-cost"), true);
+check("the row-config seat is claimed under package#row", seats.some((entry) => entry.options.name === "plugins.row.config" && entry.options.key === "dsh-session-cost#session-cost"), true);
 check("the settings seats ask for the shared config form", applied.log.some((row) => row[0] === "ctx.inject" && row[1] === "configForms"), true);
 check("the settings seats are localized", seats.every((entry) => entry.options.locale === "session-cost"), true);
 

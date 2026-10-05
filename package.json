@@ -1,5 +1,5 @@
 {
-  "name": "dsh-client-ui-session-cost",
+  "name": "dsh-session-cost",
   "version": "1.0.0",
   "description": "Per-segment Session cost in the DeepSeek Harness composer statistics strip, priced from the harness model catalog.",
   "license": "MIT",

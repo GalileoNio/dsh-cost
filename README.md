@@ -174,6 +174,7 @@ signal the client-HMR watcher already reads as "this bundle was rebuilt".
 | Field | Meaning |
 |---|---|
 | `enabled` | Render the pill at all. Off registers no projection, so no key reaches the browser. |
+| `iconLabels` | Draw a segment label's vendor and model family as brand marks instead of spelling them. On by default; see [Labels as marks](#labels-as-marks). |
 | `period` | `auto` charges each segment the window it fell in; `peak` / `offpeak` re-price every segment into one window. |
 | `currency` | Symbol for overrides that name none. Presets carry their own: the catalog is `$`, DeepSeek official is `¥`. Each option names its currency in the interface's language — `¥ 人民币`, `$ US dollar` — because a symbol alone is ambiguous: `kr` is the crown of three countries, and `¥` is the yuan here while the yen is `JP¥`. The order is fixed rather than sorted: the two currencies this plugin prices in first (`$`, `¥`), then the majors, the Asia-Pacific ones, and the rest, so it reads the same in both languages. |
 | `prices` | The override table, keyed `<provider>/<model>` or bare `<model>`; a qualified key wins. |
@@ -279,6 +280,51 @@ memoized for the process; a profile without the account plugin — or one whose
 account cannot be classified — keeps the domestic list. Pin `cny` or `usd` to
 skip the read entirely.
 
+## Labels as marks
+
+A segment label is the catalog's own model name, so its leading words are the
+vendor and the model family: `Claude Opus 4.5`, `GLM-5.3`, `Anthropic: Claude 3
+Haiku`. `iconLabels` — on by default — replaces each such word, **together with
+the separator that follows it**, by that brand's mark, and keeps the rest of the
+name as text:
+
+| Label | Drawn as |
+|---|---|
+| `DeepSeek-V4.1-Flash` | *(DeepSeek mark)* `V4.1-Flash` |
+| `Anthropic: Claude 3 Haiku` | *(Anthropic mark)(Claude mark)* `3 Haiku` |
+| `deepseek-official/deepseek-v4-pro` | *(DeepSeek mark)* `v4-pro` |
+| `Deep Research Preview (Apr-21-2026)` | unchanged |
+
+**It replaces, it never adds.** Only words the label already carries are drawn,
+so a label naming no brand — or a route whose provider has no mark, like a
+personal gateway — keeps every word it had rather than losing one to an icon it
+does not have. A repeated brand collapses to one mark, which is why the
+`provider/model` fallback above draws one DeepSeek and not two.
+
+Off means off: the label is the plain string, and the marks chunk is never
+fetched. On with the chunk missing — an older install — leaves every label as
+text rather than holding a tray open for a file that may not arrive.
+
+### Where the marks come from
+
+`lib/client.icons.js` is a package-local client chunk, the same mechanism as the
+preset table but **committed source rather than a build artifact**: nothing on
+the Host can derive a brand mark and the table is identical on every install. It
+carries one entry per vendor the preset catalog routes to, each a single mark
+with no background, already in the vendor's own colours.
+
+- The marks come from [`@lobehub/icons`](https://github.com/lobehub/lobe-icons)
+  **5.23.0** (MIT); the trademarks belong to their owners, so shipping this file
+  redistributes third-party marks and each vendor's brand guidelines apply.
+- `dark` is present only where the official mark is drawn for a dark surface — a
+  white mark, or a near-black one — and holds the same mark recoloured for the
+  light-on-dark case. Both ride along in the DOM and the sheet picks between them
+  on `body[data-ds-dark-theme]`, so the plugin never has to know which theme is
+  active and the marks follow a theme switch with no round trip.
+- Gradient ids are namespaced per brand, because several marks share the
+  `f0`-style ids their author generated and the tray can draw more than one at a
+  time.
+
 ## What it is not
 
 - **List prices, not your bill.** Discounts, promotions, and account-level terms
@@ -293,21 +339,21 @@ skip the read entirely.
 
 ## Verification
 
-Five self-contained harnesses, all runnable with plain `node` and no build:
+Six self-contained harnesses, all runnable with plain `node` and no build:
 
 ```
 npm test
 ```
 
-`npm test` runs all five, and each also runs alone:
+`npm test` runs all six, and each also runs alone:
 
 ```
 node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/fx.test.mjs           # 32 checks: the reference rates behind the converted figure
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 218 checks: the browser half, the tray and its settings page
-node test/config.test.mjs       # 78 checks: the schema, the live wiring and the billing card
+node test/bundle.test.mjs       # 238 checks: the browser half, the tray and its settings page
+node test/config.test.mjs       # 81 checks: the schema, the live wiring and the billing card
 ```
 
 Nothing is mocked away that matters: the suites import the real modules and
@@ -327,7 +373,9 @@ stub only React and the DOM, so a passing run means the shipped code works.
   size and single stroke weight in both mount contexts, and the settings page end to end — the seats it
   claims, the page it draws — fields stacked in the shell's own settings-form
     metrics, the two advanced sections folded — and the fact that each edit writes only the field
-  it changed. Its `ConfigForm` stub is a class whose methods read `this.store`,
+  it changed. It serves both package chunks, so the same suite covers what a
+  label draws with marks on (the mark, its dark counterpart, the words that
+  stayed), with them switched off, and with no marks chunk at all. Its `ConfigForm` stub is a class whose methods read `this.store`,
   so the detached method references React hands to `useSyncExternalStore` fail
   the suite exactly as they fail in the browser, and it folds accepted writes back
   into its section the way the real controller does — without that, a second edit

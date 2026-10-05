@@ -133,6 +133,9 @@ check("an unpriced route carries no price", unknownGroup.price, undefined);
 // ── defaults ─────────────────────────────────────────────────────────────────
 const defaults = Config({});
 check("default enabled", defaults.enabled.get(), true);
+// A label draws its brands unless it is told not to: the marks replace words the
+// label already carries, so the default is the richer one.
+check("label marks default to on", defaults.iconLabels.get(), true);
 check("default period", defaults.period.get(), "auto");
 check("default currency", defaults.currency.get(), "$");
 check("the official card defaults to auto-detection", defaults.officialRates.get(), "auto");
@@ -141,18 +144,20 @@ checkJson("and therefore no rates", defaults.fxRates.get(), {});
 check("the override table starts empty", JSON.stringify(defaults.prices.get()), "{}");
 
 // ── every top-level field is volatile, or the settings page never sees it ────
-for (const field of ["enabled", "period", "currency", "officialRates", "displayCurrency", "fxRates", "prices"]) {
+for (const field of ["enabled", "iconLabels", "period", "currency", "officialRates", "displayCurrency", "fxRates", "prices"]) {
 	check(`${field} resolves as a volatile handle`, typeof defaults[field]?.get, "function");
 }
 
 // ── explicit values win ──────────────────────────────────────────────────────
 const explicit = Config({
 	enabled: false,
+	iconLabels: false,
 	period: "peak",
 	currency: "€",
 	prices: { "gateway/model": { miss: 1, hit: 2, write: 3, out: 4 } }
 });
 check("explicit enabled", explicit.enabled.get(), false);
+check("explicit label marks", explicit.iconLabels.get(), false);
 check("explicit period", explicit.period.get(), "peak");
 check("explicit currency", explicit.currency.get(), "€");
 const explicitEntry = explicit.prices.get()["gateway/model"];

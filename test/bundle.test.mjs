@@ -359,9 +359,14 @@ function applyToFakeContext(options = {}) {
 	// real deployments, and both have to degrade to typing the rates by hand.
 	const chunkRequire = (specifier) => bundleRequire(specifier);
 	if (options.noChunkLoader !== true) {
-		chunkRequire.async = () => (options.ratesFails === true
-			? Promise.reject(new Error("no chunk"))
-			: Promise.resolve({ routes: options.rates ?? null }));
+		chunkRequire.async = (specifier) => {
+			if (options.ratesFails === true) return Promise.reject(new Error("no chunk"));
+			// Two chunks, two payloads: the preset table and the brand marks. A
+			// deployment can have either without the other, so both are served here
+			// exactly as their own file would be.
+			if (specifier === "./client.icons.js") return Promise.resolve({ brands: options.brands ?? null });
+			return Promise.resolve({ routes: options.rates ?? null });
+		};
 	}
 	const exports_ = registration.factory(chunkRequire);
 	exports_.apply(ctx);
@@ -899,10 +904,10 @@ check("the boundary passes children through while healthy", healthy.render(), "C
 
 const pageTree = mount(configured.component, { ...pageProps, view: "page" }).draw();
 // The page opens as settings, not as a table: the two advanced sections are
-// folded, and what is left is the four choices a session usually needs.
+// folded, and what is left is the five choices a session usually needs.
 checkJson("the advanced sections start folded", elements(pageTree).filter((node) => node.props["data-session-cost-fold"] !== undefined).map((node) => node.props["data-session-cost-fold"]), ["false", "false"]);
 check("...so no override row is on screen yet", routesOf(pageTree).length, 0);
-checkJson("the fields stack in the shell's order", elements(pageTree).filter((node) => node.props.className === "dshCost_field").length, 6);
+checkJson("the fields stack in the shell's order", elements(pageTree).filter((node) => node.props.className === "dshCost_field").length, 7);
 check("the editor offers no save control", elements(pageTree).some((node) => node.props["data-variant"] === "primary"), false);
 const enableSwitch = elements(pageTree).find((node) => node.props["data-session-cost-switch"] !== undefined);
 check("the editor shows the enable switch", enableSwitch?.props["data-session-cost-switch"], "true");
@@ -930,14 +935,115 @@ await flush();
 check("an untouched form writes nothing", configured.harness.writes.length, 0);
 check("...and reports no status", statusOf(untouched.draw()), "");
 
-// The savings switch is a field like any other: it persists as it is toggled.
+// The switches are fields like any other: each persists as it is toggled.
+// `enabled` is on, `showSavings` off, and the label marks follow their schema
+// default of on — three switches, in the order the form stacks them.
 const savingsField = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
 const savingsMount = mount(savingsField.component, { ...savingsField.face, t, view: "page" });
 const savingsSwitches = elements(savingsMount.draw()).filter((node) => node.props["data-session-cost-switch"] !== undefined);
-checkJson("the form shows both switches", savingsSwitches.map((node) => node.props["data-session-cost-switch"]), ["true", "false"]);
+checkJson("the form shows every switch, on by default where the schema says so", savingsSwitches.map((node) => node.props["data-session-cost-switch"]), ["true", "false", "true"]);
 savingsSwitches[1].props.onClick();
 await flush();
 checkJson("toggling the savings switch writes it", savingsField.harness.writes, [["showSavings", true]]);
+// The label marks default to on, so toggling writes the off state. A profile
+// written before the field existed resolves it as absent, which is that same
+// default — the write is only ever the real difference.
+savingsSwitches[2].props.onClick();
+await flush();
+checkJson("toggling the label-marks switch writes only that field", savingsField.harness.writes, [["showSavings", true], ["iconLabels", false]]);
+
+// ── label marks ──────────────────────────────────────────────────────────────
+// A segment label is the catalog's own model name, so its leading words are the
+// vendor and the model family. With marks on, each of those words and the
+// separator after it becomes the brand's mark and the rest stays text. Nothing is
+// added: a label whose words no mark can be drawn for keeps every word it had.
+const MARKS = {
+	DeepSeek: { title: "DeepSeek", svg: '<svg viewBox="0 0 16 16"><path d="M1 1h1v1z"/></svg>', dark: '<svg viewBox="0 0 16 16"><path d="M1 1h1v1z" fill="#fff"/></svg>' },
+	Claude: { title: "Claude", svg: '<svg viewBox="0 0 16 16"><path d="M2 2h1v1z"/></svg>' }
+};
+/** The pill from a context whose chunk loader serves those marks. */
+const markedPill = (brands) => applyToFakeContext(brands === undefined ? {} : { brands }).captured.component;
+/** Mount the pill, let the marks chunk settle, then open the tray. */
+async function openMarked(component, projected, settingsValue) {
+	const drawer = mount(component, {
+		useProjection: (key) => (key === "sessionCost" ? projected : undefined),
+		settings: settingsValue === undefined ? undefined : new StubConfigForm(settingsValue),
+		t
+	});
+	await flush();
+	let tree = drawer.draw();
+	// A real mount does not force the disclosure open the way `openRender` does, so
+	// the trigger is clicked the way a reader would.
+	elements(tree).find((node) => node.props.className === "dshCost_pill").props.onClick();
+	await flush();
+	tree = drawer.draw();
+	return tree;
+}
+/** One segment's label node. */
+function segmentLabelNode(tree, label) {
+	const section = sectionsOf(tree).find((child) => child.props["data-session-cost-segment"] === label);
+	return section.props.children[0].props.children[0];
+}
+function segmentMarks(tree, label) {
+	return elements(segmentLabelNode(tree, label)).filter((node) => node.props.className === "dshCost_mark");
+}
+
+const markedTree = await openMarked(markedPill(MARKS), TWO_SEGMENTS, { displayCurrency: "", fxRates: {} });
+const deepSeekMarks = segmentMarks(markedTree, "DeepSeek-V4.1-Flash");
+check("a label that names a brand draws it", deepSeekMarks.length, 1);
+check("...and is named after that brand", deepSeekMarks[0].props.title, "DeepSeek");
+check("...drawing the brand's own mark", /M1 1h1v1z/.test(deepSeekMarks[0].props.children[0].props.dangerouslySetInnerHTML.__html), true);
+check("...and keeping the words it did not replace", textOf(segmentLabelNode(markedTree, "DeepSeek-V4.1-Flash")), "V4.1-Flash");
+// A mark drawn for a dark surface cannot be the only one on screen, so both ride
+// along and the sheet picks: the theme sets the attribute, the plugin never has
+// to know which one is active.
+checkJson("the mark carries both surface variants", deepSeekMarks[0].props.children.map((node) => node.props.className), ["dshCost_markLight", "dshCost_markDark"]);
+check("...the dark one recoloured for it", deepSeekMarks[0].props.children[1].props.dangerouslySetInnerHTML.__html.includes("#fff"), true);
+check("the disclosure still stacks two children per segment head", sectionsOf(markedTree).every((section) => section.props.children[0].props.children.length === 2), true);
+check("the mark stays out of the accessible name", deepSeekMarks[0].props["aria-hidden"], true);
+
+// Off means off: the label is the string it always was, with no mark anywhere.
+const plainTree = await openMarked(markedPill(MARKS), TWO_SEGMENTS, { displayCurrency: "", fxRates: {}, iconLabels: false });
+check("turning the marks off restores the plain label", segmentMarks(plainTree, "DeepSeek-V4.1-Flash").length, 0);
+check("...which still reads as its own label", textOf(segmentLabelNode(plainTree, "DeepSeek-V4.1-Flash")), "DeepSeek-V4.1-Flash");
+checkJson("...and every segment still renders", segmentLabels(plainTree), ["DeepSeek-V4.1-Flash", "DeepSeek-V4-Pro-0813"]);
+
+// On, but with no chunk to draw from: the tray stays complete rather than waiting
+// for a file that may never arrive.
+const chunklessMarks = await openMarked(markedPill(undefined), TWO_SEGMENTS, { displayCurrency: "", fxRates: {} });
+check("a missing marks chunk leaves the label alone", segmentMarks(chunklessMarks, "DeepSeek-V4.1-Flash").length, 0);
+check("...with its full text", textOf(segmentLabelNode(chunklessMarks, "DeepSeek-V4.1-Flash")), "DeepSeek-V4.1-Flash");
+
+// The `provider/model` fallback is the one label that spells the route out, so its
+// provider segment is replaced by that provider's mark — and the model segment
+// repeats the same brand, which collapses to the single mark beside `v4-pro`.
+const PROVIDER_FORM = {
+	groups: {
+		a: group("deepseek-official", "deepseek-v4-pro", false, {
+			uncachedInputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, attempts: 1
+		}, price("¥", "", RATES_YUAN))
+	},
+	unattributed: NO_UNATTRIBUTED
+};
+const providerTree = await openMarked(markedPill(MARKS), PROVIDER_FORM, { displayCurrency: "", fxRates: {} });
+checkJson("an unlabelled price falls back to provider/model", segmentLabels(providerTree), ["deepseek-official/deepseek-v4-pro"]);
+check("...whose repeated brand draws one mark, not two", segmentMarks(providerTree, "deepseek-official/deepseek-v4-pro").length, 1);
+check("...leaving only the model number", textOf(segmentLabelNode(providerTree, "deepseek-official/deepseek-v4-pro")), "v4-pro");
+
+// A route with no mark of its own keeps the whole label: replacing a word it
+// cannot draw would drop the provider's name instead of drawing it.
+const UNKNOWN_ROUTE = {
+	groups: {
+		a: group("my-gateway", "qwen3-32b", false, {
+			uncachedInputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, attempts: 1
+		}, price("$", "", { miss: 1, hit: 0, write: 0, out: 0 }))
+	},
+	unattributed: NO_UNATTRIBUTED
+};
+const unknownTree = await openMarked(markedPill(MARKS), UNKNOWN_ROUTE, { displayCurrency: "", fxRates: {} });
+checkJson("an unknown route still falls back to provider/model", segmentLabels(unknownTree), ["my-gateway/qwen3-32b"]);
+check("...and keeps every word of it", segmentMarks(unknownTree, "my-gateway/qwen3-32b").length, 0);
+check("...including the provider it named", textOf(segmentLabelNode(unknownTree, "my-gateway/qwen3-32b")), "my-gateway/qwen3-32b");
 
 // Editing one rate writes only the prices field, and only the edited value.
 const edited = settingsHarness({ settingsValue: CONFIGURED });

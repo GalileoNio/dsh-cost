@@ -58,6 +58,7 @@
   "files": [
     "lib/index.js",
     "lib/client.js",
+    "lib/client.icons.js",
     "lib/fx.js",
     "lib/presets.js",
     "lib/projection.js",

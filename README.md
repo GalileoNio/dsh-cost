@@ -226,7 +226,7 @@ stub only React and the DOM, so a passing run means the shipped code works.
 - `bundle.test.mjs` materializes the real `lib/client.js` against stubbed React
   and DOM and drives the real components through a stateful mount: per-segment
   arithmetic, mixed currencies, disclosed incompleteness, the icon's intrinsic
-  size in both mount contexts, and the settings page end to end — the seats it
+  size and single stroke weight in both mount contexts, and the settings page end to end — the seats it
   claims, the cards it draws, and the fact that a save writes only what
   changed. Its `ConfigForm` stub is a class whose methods read `this.store`, so
   the detached method references React hands to `useSyncExternalStore` fail the

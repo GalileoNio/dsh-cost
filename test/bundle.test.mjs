@@ -478,6 +478,21 @@ const sheet = styleTags[0].textContent;
 check("the class sheet bounds a pill icon", /\.dshCost_pill svg[^{]*\{[^}]*width:14px/.test(sheet), true);
 check("the class sheet bounds a panel icon", /\.dshCost_panel svg[^{]*\{[^}]*width:14px/.test(sheet), true);
 
+// ── the mark matches the weight of the icons it sits among ──────────────────
+// The dock's line icons read at roughly 1.25 units in a 16-unit box. The first
+// version drew a 1.5 ring around a 1.2 ¥: a heavy circle with a spindly glyph
+// inside, which is the mismatch this pins shut.
+const marked = flatten([pillIcon.props.children]);
+check("the icon is a line drawing, not a filled mark", pillIcon.props.fill, "none");
+check("the mark has parts", marked.length > 0, true);
+checkJson("every part strokes", marked.filter((child) => child.props.stroke !== "currentColor").length, 0);
+const weights = [...new Set(marked.map((child) => child.props.strokeWidth))];
+check("the mark is drawn at exactly one weight", weights.length, 1);
+// Mainstream 16-unit line icons sit between 1 and 1.5; outside that reads either
+// faint or heavy beside the dock's own glyphs.
+check("the weight is inside the line-icon range", weights[0] >= 1 && weights[0] <= 1.5, true);
+check("the ring is the heavier half of the first version gone", weights[0] < 1.5, true);
+
 // ── the settings seats ───────────────────────────────────────────────────────
 // The Plugins page renders no automatic schema form: it renders whatever the
 // owning plugin claims for these seats, so a plugin with settings must claim

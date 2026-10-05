@@ -831,8 +831,8 @@ const HALVED = {
 checkJson("without the switch nothing is struck through", struckOf(openRender(HALVED, savingsOn(false))), []);
 checkJson("the list price is drawn struck through, then what was paid", struckOf(openRender(HALVED, savingsOn())), ["¥52.00", "¥52.00"]);
 const savingsTree = openRender(HALVED, savingsOn());
-check("...on the segment subtotal", textOf(elements(savingsTree).find((node) => node.props.className === "dshCost_subtotal")), "¥52.00省 88%¥6.40");
-check("...and on the total", textOf(elements(savingsTree).find((node) => node.props.className === "dshCost_amounts")), "¥52.00省 88%¥6.40");
+check("...on the segment subtotal", textOf(elements(savingsTree).find((node) => node.props.className === "dshCost_subtotal")), "¥52.00-88%¥6.40");
+check("...and on the total", textOf(elements(savingsTree).find((node) => node.props.className === "dshCost_amounts")), "¥52.00-88%¥6.40");
 // A price with no peak window still saves on the cache: every hit charged as a miss.
 const CACHED = {
 	groups: {
@@ -866,7 +866,7 @@ checkJson("with both withheld there is nothing to strike", struckOf(openRender(H
 // with it on the share of list price the discounts took sits between them.
 const noPercent = new StubConfigForm({ displayCurrency: "", fxRates: {}, showSavings: true, savingsCache: true, savingsOffpeak: true, savingsPercent: false });
 check("with the percentage off the amounts sit together", textOf(elements(openRender(HALVED, noPercent)).find((node) => node.props.className === "dshCost_amounts")), "¥52.00¥6.40");
-check("...and the percentage is drawn between them when it is on", textOf(elements(savingsTree).find((node) => node.props.className === "dshCost_savedPercent")), "省 88%");
+check("...and the percentage is drawn between them when it is on", textOf(elements(savingsTree).find((node) => node.props.className === "dshCost_savedPercent")), "-88%");
 checkJson("and both on is the whole comparison", struckOf(openRender(HALVED, subSettings(true, true))), ["¥52.00", "¥52.00"]);
 
 

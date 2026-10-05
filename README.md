@@ -208,7 +208,7 @@ title line:
 | `displayCurrency` | The currency that figure is expressed in. Empty — the default — shows no figure at all. |
 | `showSavings` | Draws the cache-hit and off-peak discounts as a struck-through list price before every subtotal and total. Off by default. |
 | `savingsCache`, `savingsOffpeak` | The first two sub-options under it, both on: each withholds one discount from the comparison, so it can show the cache saving alone, the window saving alone, or both. |
-| `savingsPercent` | The third, also on: names the saving as a share of list price, drawn between the two figures — `¥52.00 省 88% ¥6.40`. Only ever where a discount is shown, so a session that saved nothing gains no chip. |
+| `savingsPercent` | The third, also on: names the saving as a share of list price, drawn between the two figures — `¥52.00 -88% ¥6.40`, a discount written the way a price tag writes it. Only ever where a discount is shown, so a session that saved nothing gains no chip. |
 | `fxRates` | Your own rates, e.g. `{"¥": 0.1467}`. Optional: they outrank every other source. |
 
 *List price* means the same tokens with both discounts put back: every input token

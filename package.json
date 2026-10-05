@@ -53,11 +53,12 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node test/presets.test.mjs && node test/rates-chunk.test.mjs && node test/projection.test.mjs && node test/bundle.test.mjs && node test/config.test.mjs"
+    "test": "node test/presets.test.mjs && node test/rates-chunk.test.mjs && node test/fx.test.mjs && node test/projection.test.mjs && node test/bundle.test.mjs && node test/config.test.mjs"
   },
   "files": [
     "lib/index.js",
     "lib/client.js",
+    "lib/fx.js",
     "lib/presets.js",
     "lib/projection.js",
     "lib/rates-chunk.js",

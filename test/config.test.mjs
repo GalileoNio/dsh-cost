@@ -231,11 +231,24 @@ check("...at the detected card's rate", afterAnswer.price.rates.miss, 0.15);
 // ── the conversion policy rides the wire only when it is configured ──────────
 check("no summary currency means no conversion on the wire", wireFor(Config({}), "deepseek-official", "deepseek-flash", USAGE).conversion, undefined);
 const converting = wireFor(Config({ displayCurrency: "$", fxRates: { "¥": 0.15 } }), "deepseek-official", "deepseek-flash", USAGE);
-checkJson("the wire carries the target currency and the user's rates", converting.conversion, { currency: "$", rates: { "¥": 0.15 } });
+check("the wire carries the target currency", converting.conversion.currency, "$");
+check("a rate the user entered is the one published", converting.conversion.rates["¥"], 0.15);
+check("...and is labelled as theirs", converting.conversion.sources["¥"], "manual");
 check("...alongside the priced groups, not instead of them", converting.groups[Object.keys(converting.groups)[0]].price.currency, OFFICIAL_CURRENCY);
-const emptyRates = wireFor(Config({ displayCurrency: "€" }), "deepseek-official", "deepseek-flash", USAGE);
-checkJson("a target currency without rates still publishes the policy", emptyRates.conversion, { currency: "€", rates: {} });
-check("...so the browser withholds the figure rather than guessing", emptyRates.conversion.rates["¥"], undefined);
+
+// With no rate entered, the reference data answers instead — that is the whole
+// point of shipping a snapshot: a chosen currency always produces a figure.
+const referenced = wireFor(Config({ displayCurrency: "€" }), "deepseek-official", "deepseek-flash", USAGE);
+check("a currency with no manual rate still converts", typeof referenced.conversion.rates["¥"], "number");
+check("...from the snapshot, named as such", referenced.conversion.sources["¥"], "snapshot");
+check("...dated, so an ageing snapshot is visible", /^\d{4}-\d{2}-\d{2}$/.test(referenced.conversion.asOf), true);
+// 1 CNY in EUR is the ECB cross rate: perEur(EUR) / perEur(CNY).
+check("...at the rate the reference data implies", Math.abs(referenced.conversion.rates["¥"] - 1 / 7.5259) < 1e-9, true);
+// A symbol no source carries — `kr` is three currencies, so it is deliberately
+// unmapped — is the one case that still withholds, and the tray names it.
+const unmappable = wireFor(Config({ displayCurrency: "kr" }), "deepseek-official", "deepseek-flash", USAGE);
+check("a symbol no source identifies publishes no rates", JSON.stringify(unmappable.conversion.rates), "{}");
+check("...and the browser withholds the figure rather than guessing", unmappable.conversion.rates["¥"], undefined);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

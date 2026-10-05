@@ -191,13 +191,25 @@ title line:
 | Setting | Meaning |
 |---|---|
 | `displayCurrency` | The currency that figure is expressed in. Empty — the default — shows no figure at all. |
-| `fxRates` | One unit of the keyed currency is worth this many units of the summary currency, e.g. `{"¥": 0.1467}`. |
+| `fxRates` | Your own rates, e.g. `{"¥": 0.1467}`. Optional: they outrank every other source. |
 
-Three rules keep that figure honest. The plugin never fetches a rate and never
-ships one, so the number is yours rather than a guess at today's market. A
-currency the table does not rate **withholds the figure entirely** rather than
-converting part of the total, which would be a number no rate produced. And the
-figure always carries `≈` and names the conversion on hover, so it can never be
+Rates come from three places, in this order:
+
+1. **`fxRates`** — what you entered. Nothing outranks it, so a rate typed by hand
+   is never quietly "corrected" by a fetch.
+2. **The ECB daily reference feed**, read once per process the first time a
+   figure needs it. EUR-based, no key, and the request carries no user data.
+3. **A dated snapshot** of that same feed, shipped with the plugin, which stands
+   in when the feed is unreachable — so choosing a currency still produces a
+   figure offline.
+
+Three rules keep the figure honest. No rate here is invented: every published
+number is the ECB's, and the snapshot carries `BUILTIN_AS_OF` with it. A currency
+no source identifies — `kr` names three different crowns, and `₽` is unpublished —
+**withholds the figure entirely** rather than converting part of the total, which
+would be a number no rate produced; the tray then names the currency it could not
+rate. And the figure always carries `≈` and names its source on hover
+("reference rates (ECB 2026-10-02)", "the rates you entered"), so it can never be
 read as a billed amount — the per-currency totals beneath it stay the source of
 truth. Only the policy travels to the browser; the multiplication happens next to
 the totals that already exist, so there is exactly one implementation of what a
@@ -247,9 +259,10 @@ npm test
 ```
 node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
+node test/fx.test.mjs           # 29 checks: the reference rates behind the converted figure
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 167 checks: the browser half, the tray and its settings page
-node test/config.test.mjs       # 75 checks: the schema, the live wiring and the billing card
+node test/bundle.test.mjs       # 170 checks: the browser half, the tray and its settings page
+node test/config.test.mjs       # 81 checks: the schema, the live wiring and the billing card
 ```
 
 Nothing is mocked away that matters: the suites import the real modules and

@@ -626,12 +626,30 @@ const TWO_CURRENCIES = {
 		}, price("$", "Claude", { miss: 1, hit: 0, write: 0, out: 0 }))
 	},
 	unattributed: NO_UNATTRIBUTED,
-	conversion: { currency: "$", rates: { "¥": 0.15 } }
+	conversion: { currency: "$", rates: { "¥": 0.15 }, sources: { "¥": "manual" }, asOf: null }
 };
 const mixed = openRender(TWO_CURRENCIES);
 check("the title carries the converted total", titleValueOf(mixed), "≈$1.15");
 checkJson("the totals still list every currency as billed", totalsOf(mixed), ["¥1.00", "$1.00"]);
-check("the converted figure is marked as a conversion", flatten([panelChildren(mixed).find((child) => child.props.className === "dshCost_title").props.children]).find((child) => child.props.className === "dshCost_titleValue").props.title, "按你输入的汇率折算");
+const titleTip = (tree) => flatten([panelChildren(tree).find((child) => child.props.className === "dshCost_title").props.children]).find((child) => child.props.className === "dshCost_titleValue").props.title;
+check("the converted figure is marked as a conversion", titleTip(mixed), "按你输入的汇率折算");
+// ...and says which rates, because a converted figure is never a vendor price.
+const REFERENCED = { ...TWO_CURRENCIES, conversion: { currency: "$", rates: { "¥": 0.15 }, sources: { "¥": "reference" }, asOf: "2026-10-02" } };
+check("a reference rate is named with its date", titleTip(openRender(REFERENCED)), "按参考汇率（ECB 2026-10-02）折算");
+const SNAPSHOT_FX = { ...TWO_CURRENCIES, conversion: { currency: "$", rates: { "¥": 0.15 }, sources: { "¥": "snapshot" }, asOf: "2026-10-02" } };
+check("a snapshot is named as built-in", titleTip(openRender(SNAPSHOT_FX)), "按内置参考汇率（2026-10-02）折算");
+// A session that used one currency the user rated by hand and one it did not.
+const BOTH_FX = {
+	groups: {
+		yuan: TWO_CURRENCIES.groups.yuan,
+		euro: group("acme", "eu-model", false, {
+			uncachedInputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, attempts: 1
+		}, price("€", "EU Model", { miss: 1, hit: 0, write: 0, out: 0 }))
+	},
+	unattributed: NO_UNATTRIBUTED,
+	conversion: { currency: "$", rates: { "¥": 0.15, "€": 1.1 }, sources: { "¥": "manual", "€": "reference" }, asOf: "2026-10-02" }
+};
+check("a mixed table names both", titleTip(openRender(BOTH_FX)), "按参考汇率（ECB 2026-10-02）与你输入的汇率折算");
 check("no conversion configured leaves today's tray untouched", titleValueOf(open), undefined);
 // The display currency rates itself, so one currency alone still converts.
 const SINGLE = { ...TWO_CURRENCIES, groups: { yuan: TWO_CURRENCIES.groups.yuan } };
@@ -646,7 +664,7 @@ const ZERO_RATE = { ...TWO_CURRENCIES, conversion: { currency: "$", rates: { "¥
 check("a zero rate is not a rate", titleValueOf(openRender(ZERO_RATE)), undefined);
 // An incomplete session makes the converted figure a lower bound too.
 const MIXED_INCOMPLETE = { ...TWO_CURRENCIES, unattributed: { ...NO_UNATTRIBUTED, attempts: 2 } };
-check("an incomplete session marks the figure a lower bound", flatten([panelChildren(openRender(MIXED_INCOMPLETE)).find((child) => child.props.className === "dshCost_title").props.children]).find((child) => child.props.className === "dshCost_titleValue").props.title, "按你输入的汇率折算，且为下限");
+check("an incomplete session marks the figure a lower bound", titleTip(openRender(MIXED_INCOMPLETE)), "按你输入的汇率折算，且为下限");
 
 // ── the settings seats ───────────────────────────────────────────────────────
 // The Plugins page renders no automatic schema form: it renders whatever the

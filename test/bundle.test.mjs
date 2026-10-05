@@ -146,9 +146,31 @@ function elements(node, out = []) {
 	elements(node.props?.children, out);
 	return out;
 }
+/**
+ * Stand-in for the shell's UI primitives. The tray is expected to place, fit and
+ * dismiss itself through these rather than re-deriving the rules, so the stub
+ * records what it was asked for and the suite asserts on that.
+ */
+const primitives = {
+	placed: [],
+	heightCaps: [],
+	dismissals: 0,
+	useAnchoredPosition(options) {
+		primitives.placed.push(options);
+		return options.open === true ? { left: 40, top: 100 } : null;
+	},
+	useAnchoredMaxHeight(ref, cap) {
+		primitives.heightCaps.push(cap);
+		return cap;
+	},
+	useDismissOnOutsidePointer() {
+		primitives.dismissals += 1;
+	}
+};
 function bundleRequire(specifier) {
 	if (specifier === "react") return react;
 	if (specifier === "react-dom") return { createPortal: (node) => node };
+	if (specifier === "@deepseek-ai/dsh-client-ui-primitives") return primitives;
 	throw new Error(`bundle required an unexpected module: ${specifier}`);
 }
 
@@ -466,10 +488,12 @@ checkJson("the unpriced route is named", notesOf(openRender(WITH_UNPRICED))[0], 
 // constrained it inside the pill alone, so the disclosure panel drew it at the
 // panel's full 360px width.
 const pillIcon = resolve(render(TWO_SEGMENTS).props.children[0].props.children.props.children[0]);
-check("the pill icon carries sized against the icons beside it", pillIcon.props.width, 14);
+check("the pill icon is sized against the icons beside it", pillIcon.props.width, 14);
 check("the pill icon is square", pillIcon.props.height, 14);
 const titleBar = panelChildren(open).find((child) => child.props.className === "dshCost_title");
-const panelIcon = resolve(flatten(titleBar.props.children)[0]);
+// A single-child element carries the child directly, not wrapped in an array.
+const titleLabel = resolve(Array.isArray(titleBar.props.children) ? titleBar.props.children[0] : titleBar.props.children);
+const panelIcon = resolve(flatten(titleLabel.props.children)[0]);
 check("the panel icon carries an intrinsic width", panelIcon.props.width, 14);
 check("the panel icon carries an intrinsic height", panelIcon.props.height, 14);
 check("both mounts share one viewBox", panelIcon.props.viewBox, pillIcon.props.viewBox);
@@ -510,6 +534,30 @@ const innerDiameter = 2 * (Number(ring.props.r) - Number(ring.props.strokeWidth)
 check("the glyph is big enough to read", glyphSpan >= 6, true);
 check("...but stays clear of the ring", glyphSpan < innerDiameter - 2, true);
 check("the ring's span is the largest that keeps a margin", Number(ring.props.r) * 2 + Number(ring.props.strokeWidth), 15);
+
+// ── the tray is the shell's tray, not a lookalike ───────────────────────────
+// The dock's other pills place and dismiss their trays through the shared
+// primitives; the surface has to be the same menu material for the panels to
+// read as one family.
+check("the tray asks the shell to place it", primitives.placed.length > 0, true);
+const placement = primitives.placed[primitives.placed.length - 1];
+check("...anchored above the trigger", placement.side, "top");
+check("...with the shell's gap", placement.gap, 8);
+check("...and the shell's viewport margin", placement.margin, 12);
+check("the tray asks the shell to dismiss it", primitives.dismissals > 0, true);
+check("the tray's height cap comes from the shell's fit", primitives.heightCaps[0], 560);
+const panel = resolve(open.props.children[1]);
+check("the panel is the shell's menu material", panel.props.className, "dshCost_panel");
+check("...applied through the shell's measure-then-place style", panel.props.style.maxHeight, 560);
+check("...and scrolls inside the fitted height", panel.props.style.overflowY, "auto");
+check("the title uses the shell's inline label wrapper", titleLabel.props.className, "dshCost_titleLabel");
+check("the tray surface takes the shell's menu background", /\.dshCost_panel\{[^}]*background:var\(--dsw-specific-menu\)/.test(sheet), true);
+check("...the shell's elevation", /\.dshCost_panel\{[^}]*box-shadow:var\(--dsw-elevation-prominent\)/.test(sheet), true);
+check("...the shell's backdrop filter", /\.dshCost_panel\{[^}]*backdrop-filter:var\(--dsw-menu-backdrop-filter\)/.test(sheet), true);
+check("...the shell's radius and no border", /\.dshCost_panel\{[^}]*border:0;[^}]*border-radius:var\(--dsw-radius-lg\)/.test(sheet), true);
+check("...the shell's 16px padding", /\.dshCost_panel\{[^}]*padding:16px/.test(sheet), true);
+check("...the shell's width band", /\.dshCost_panel\{[^}]*max-width:min\(440px/.test(sheet), true);
+check("the title rule is the shell's hairline", /\.dshCost_rule\{[^}]*border-top:\.5px solid var\(--dsw-alias-border-l2\)/.test(sheet), true);
 
 // ── the settings seats ───────────────────────────────────────────────────────
 // The Plugins page renders no automatic schema form: it renders whatever the

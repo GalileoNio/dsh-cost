@@ -207,6 +207,7 @@ title line:
 |---|---|
 | `displayCurrency` | The currency that figure is expressed in. Empty — the default — shows no figure at all. |
 | `showSavings` | Draws the cache-hit and off-peak discounts as a struck-through list price before every subtotal and total. Off by default. |
+| `savingsCache`, `savingsOffpeak` | The two sub-options under it, both on: each withholds one discount from the comparison, so it can show the cache saving alone, the window saving alone, or both. |
 | `fxRates` | Your own rates, e.g. `{"¥": 0.1467}`. Optional: they outrank every other source. |
 
 *List price* means the same tokens with both discounts put back: every input token
@@ -225,16 +226,20 @@ it is not. So there is always a number to read next to "Session cost", and the t
 places never disagree. The itemised totals below the title stay per currency either
 way.
 
-Which currency that value is expressed in — and the rates you enter — are read
-from the settings mirror **in the browser**, so switching either shows up at once.
-A projection is recomposed on session events alone and the registry offers no way
-to force one, so a target currency resolved on the Host would sit stale until the
-next event; the wire publishes the reference *data* and the browser resolves it.
+**Every setting takes effect at once, and the two halves do it differently.**
+Which currency the figure is expressed in, your own rates, the savings comparison
+and the label marks are read from the settings mirror **in the browser**, so they
+redraw in the same render — no event, no pull, nothing to wait for.
 
-Price settings are different, and unavoidably so: which rate applies to a segment
-is the Host's fold, and that is the one place a session's cost is computed. Change
-the rate window or a price and it takes effect on that session's next event —
-still without a restart, and without a reload.
+The rest shape the Host's own composition: the rate window, the price list, the
+override table, whether the pill is on. A projection is recomposed on session
+events alone, and the Host's registry offers no way to force one — but
+`remote.session.projections` reads every registered projection without activating
+an Agent, so the tray pulls once when one of those changes and shows what came
+back. The pull is held only until the stream delivers its own value, which by then
+is composed with the new settings, so nothing is pinned and the next session event
+is authoritative again. The probe runs that as a table over every option: the
+presentation ones never pull, the Host-shaped ones pull exactly once.
 
 Rates come from three places, in this order:
 
@@ -352,7 +357,7 @@ node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/fx.test.mjs           # 32 checks: the reference rates behind the converted figure
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 238 checks: the browser half, the tray and its settings page
+node test/bundle.test.mjs       # 245 checks: the browser half, the tray and its settings page
 node test/config.test.mjs       # 81 checks: the schema, the live wiring and the billing card
 ```
 

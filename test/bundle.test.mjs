@@ -180,6 +180,15 @@ const primitives = {
 	// real ones cannot load here — they import the Host tree's React, which a bare
 	// Node run has no copy of — so the probe covers real React and this covers this
 	// bundle's own wiring and structure.
+	Checkbox({ checked, onChange, label, disabled }) {
+		return react.createElement("button", {
+			type: "button",
+			"data-session-cost-checkbox": String(checked),
+			"aria-label": label,
+			disabled,
+			onClick: () => onChange(!checked)
+		}, label);
+	},
 	Switch({ checked, onChange, label, disabled }) {
 		return react.createElement("button", {
 			type: "button",
@@ -411,16 +420,18 @@ const RATES_USD = { miss: 1, hit: 0.1, write: 1, out: 2 };
 const NO_UNATTRIBUTED = { uncachedInputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, attempts: 0 };
 
 /** Render the real component once. */
-function render(projected, settings) {
+function render(projected, settings, pull) {
 	return applied.captured.component({
 		useProjection: (key) => (key === "sessionCost" ? projected : undefined),
 		settings,
+		refresh: pull === undefined ? undefined : pull.refresh,
+		sessionId: pull === undefined ? undefined : pull.sessionId,
 		t
 	});
 }
-function openRender(projected, settings) {
+function openRender(projected, settings, pull) {
 	harnessOpen = true;
-	const tree = render(projected, settings);
+	const tree = render(projected, settings, pull);
 	harnessOpen = false;
 	return tree;
 }
@@ -844,6 +855,15 @@ const FULL_PRICE = {
 	unattributed: NO_UNATTRIBUTED
 };
 checkJson("a session that saved nothing strikes nothing through", struckOf(openRender(FULL_PRICE, savingsOn())), []);
+// Each sub-option withholds one discount from the comparison, so the two can be
+// told apart: a cache-only saving still strikes through, an off-peak-only one too,
+// and with both withheld the list price is the paid price and nothing is struck.
+const subSettings = (savingsCache, savingsOffpeak) => new StubConfigForm({ displayCurrency: "", fxRates: {}, showSavings: true, savingsCache, savingsOffpeak });
+checkJson("the cache sub-option alone still strikes through", struckOf(openRender(HALVED, subSettings(true, false))), ["¥26.00", "¥26.00"]);
+checkJson("the window sub-option alone does too", struckOf(openRender(HALVED, subSettings(false, true))), ["¥12.80", "¥12.80"]);
+checkJson("with both withheld there is nothing to strike", struckOf(openRender(HALVED, subSettings(false, false))), []);
+checkJson("and both on is the whole comparison", struckOf(openRender(HALVED, subSettings(true, true))), ["¥52.00", "¥52.00"]);
+
 
 // ── the settings seats ───────────────────────────────────────────────────────
 // The Plugins page renders no automatic schema form: it renders whatever the
@@ -942,6 +962,7 @@ const savingsField = settingsHarness({ settingsValue: CONFIGURED, catalog: [] })
 const savingsMount = mount(savingsField.component, { ...savingsField.face, t, view: "page" });
 const savingsSwitches = elements(savingsMount.draw()).filter((node) => node.props["data-session-cost-switch"] !== undefined);
 checkJson("the form shows every switch, on by default where the schema says so", savingsSwitches.map((node) => node.props["data-session-cost-switch"]), ["true", "false", "true"]);
+checkJson("the sub-options are hidden while the switch is off", elements(savingsMount.draw()).filter((node) => node.props["data-session-cost-checkbox"] !== undefined), []);
 savingsSwitches[1].props.onClick();
 await flush();
 checkJson("toggling the savings switch writes it", savingsField.harness.writes, [["showSavings", true]]);
@@ -951,6 +972,17 @@ checkJson("toggling the savings switch writes it", savingsField.harness.writes, 
 savingsSwitches[2].props.onClick();
 await flush();
 checkJson("toggling the label-marks switch writes only that field", savingsField.harness.writes, [["showSavings", true], ["iconLabels", false]]);
+// With the switch on, the two discounts become individually switchable; with it
+// off they are not drawn at all, which the first check above pinned.
+// The sub-options, on their own mount: the savings switch is already on there, so
+// they render without disturbing the sequence above.
+const subField = settingsHarness({ settingsValue: { ...CONFIGURED, showSavings: true }, catalog: [] });
+const subMount = mount(subField.component, { ...subField.face, t, view: "page" });
+const subOptions = elements(subMount.draw()).filter((node) => node.props["data-session-cost-checkbox"] !== undefined);
+checkJson("the savings sub-options render beneath the switch", subOptions.map((node) => [node.props["aria-label"], node.props["data-session-cost-checkbox"]]), [["缓存命中", "true"], ["空闲时段", "true"]]);
+subOptions[1].props.onClick();
+await flush();
+checkJson("toggling a sub-option writes only that field", subField.harness.writes, [["savingsOffpeak", false]]);
 
 // ── label marks ──────────────────────────────────────────────────────────────
 // A segment label is the catalog's own model name, so its leading words are the

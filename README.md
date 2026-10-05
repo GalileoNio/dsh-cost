@@ -123,6 +123,18 @@ Every accepted write goes through the `session-cost` settings namespace's
 `ConfigForm`, which lands it in the profile patch by entry id. The editor writes
 only the fields you actually changed.
 
+Adding a row normally starts from the picker. **Import a configured model** lists
+every route the Host currently reports grouped by provider, straight from
+`remote.session.modelCatalog()` — which is why a provider you configured in
+Settings → Models shows up here without typing its `provider/model` key. Picking
+one pre-fills the key *and* the display name, leaving only the rates; routes that
+already carry an override are retired in the list. If the catalog cannot be read
+the control says so, and manual entry still works.
+
+The default currency is a select of the common symbols with a Custom… escape
+hatch for anything else. It applies to every override that names no symbol of its
+own; presets keep theirs (the catalog is `$`, DeepSeek official is `¥`).
+
 | Field | Meaning |
 |---|---|
 | `enabled` | Render the pill at all. Off registers no projection, so no key reaches the browser. |
@@ -175,7 +187,7 @@ npm test
 ```
 node test/presets.test.mjs      # 49 checks: catalog derivation and precedence
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 72 checks: the browser half and its settings page
+node test/bundle.test.mjs       # 87 checks: the browser half and its settings page
 node test/config.test.mjs       # 44 checks: the schema and the live wiring
 ```
 

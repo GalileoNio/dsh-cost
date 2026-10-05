@@ -222,10 +222,16 @@ function applyToFakeContext(options = {}) {
 		},
 		inject(deps, callback) {
 			log.push(["ctx.inject", deps.join(",")]);
-			callback({
-				slots: ctx.slots,
-				configForms: { get: () => settings }
-			});
+			const scope = { slots: ctx.slots };
+			if (deps.includes("configForms")) scope.configForms = { get: () => settings };
+			if (deps.includes("remote")) {
+				scope.remote = {
+					session: {
+						modelCatalog: () => (options.catalogFails === true ? Promise.reject(new Error("offline")) : Promise.resolve({ groups: options.catalog ?? [] }))
+					}
+				};
+			}
+			callback(scope);
 		},
 		slots: {
 			inject(slot, callback) {
@@ -558,9 +564,9 @@ check("a blank number box means zero", edited.harness.writes[0][1]["my-gateway/q
 
 // Adding a row writes a second entry, and a refused write is reported.
 const added = settingsHarness({ settingsValue: CONFIGURED });
-const addedMounted = mount(added.component, { settings: added.face.settings, t, view: "page" });
+const addedMounted = mount(added.component, { ...added.face, t, view: "page" });
 let addedTree = addedMounted.draw();
-elements(addedTree).filter((node) => node.props.className === "dshCost_button")[0].props.onClick();
+elements(addedTree).find((node) => node.type === "button" && node.props.children === "手动添加空白覆盖").props.onClick();
 addedTree = addedMounted.draw();
 check("adding a row shows a second card", elements(addedTree).filter((node) => node.props["data-session-cost-override"] !== undefined).length, 2);
 elements(addedTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
@@ -581,6 +587,65 @@ const emptyHarness = settingsHarness({ settingsValue: { enabled: true, period: "
 check("an empty override table says so", textOf(mount(emptyHarness.component, { settings: emptyHarness.face.settings, t, view: "page" }).draw()).includes("暂无覆盖"), true);
 const loadingHarness = settingsHarness({});
 check("a loading namespace says so", elements(mount(loadingHarness.component, { settings: loadingHarness.face.settings, t, view: "page" }).draw()).find((node) => node.props.className === "dshCost_settingsHint").props.children, "读取设置…");
+
+// ── the currency control ─────────────────────────────────────────────────────
+const currency = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
+const currencyMount = mount(currency.component, { ...currency.face, t, view: "page" });
+let currencyTree = currencyMount.draw();
+const currencySelect = elements(currencyTree).find((node) => node.type === "select" && elements(node).some((child) => child.type === "option" && child.props.value === "HK$"));
+check("the currency control offers common symbols", currencySelect !== undefined, true);
+check("the currency control offers an escape hatch", elements(currencySelect).some((child) => child.type === "option" && child.props.value === "\u0000custom"), true);
+check("a preset symbol needs no text box", elements(currencyTree).some((node) => node.props.className === "dshCost_input dshCost_currency"), false);
+currencySelect.props.onChange({ target: { value: "HK$" } });
+currencyTree = currencyMount.draw();
+elements(currencyTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
+await flush();
+checkJson("picking a symbol writes it", currency.harness.writes.filter((write) => write[0] === "currency"), [["currency", "HK$"]]);
+
+// A symbol outside the list keeps its own text box, and the select says so.
+const custom = settingsHarness({ settingsValue: { ...CONFIGURED, currency: "元" }, catalog: [] });
+const customTree = mount(custom.component, { ...custom.face, t, view: "page" }).draw();
+check("an unlisted symbol gets a text box", elements(customTree).find((node) => node.props.className === "dshCost_input dshCost_currency")?.props.value, "元");
+const customSelect = elements(customTree).find((node) => node.type === "select" && elements(node).some((child) => child.props.value === "\u0000custom"));
+check("the select reports the custom choice", customSelect.props.value, "\u0000custom");
+
+// ── importing a configured model ─────────────────────────────────────────────
+const CATALOG = [
+	{ id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-flash", name: "DeepSeek Flash" }, { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" }] },
+	{ id: "my-gateway", name: "My Gateway", models: [{ id: "qwen3-32b", name: "Qwen3 32B" }, { id: "llama-4", name: "Llama 4" }] }
+];
+const importing = settingsHarness({ settingsValue: CONFIGURED, catalog: CATALOG });
+const importingMount = mount(importing.component, { ...importing.face, t, view: "page" });
+importingMount.draw();
+await flush();
+let importingTree = importingMount.draw();
+const picker = elements(importingTree).find((node) => node.type === "select" && elements(node).some((child) => child.type === "optgroup"));
+checkJson("the picker groups routes by provider", elements(picker).filter((node) => node.type === "optgroup").map((node) => node.props.label), ["DeepSeek · deepseek", "My Gateway · my-gateway"]);
+const routeOptions = elements(picker).filter((node) => node.type === "option" && node.props.value !== "");
+checkJson("the picker offers every provider/model route", routeOptions.map((node) => node.props.value), ["deepseek/deepseek-flash", "deepseek/deepseek-v4-pro", "my-gateway/qwen3-32b", "my-gateway/llama-4"]);
+const overridden = routeOptions.find((node) => node.props.value === "my-gateway/qwen3-32b");
+check("a route already overridden is retired in the picker", overridden.props.disabled, true);
+check("...and labelled as such", textOf(overridden).includes("已添加"), true);
+
+picker.props.onChange({ target: { value: "my-gateway/llama-4" } });
+importingTree = importingMount.draw();
+elements(importingTree).find((node) => node.type === "button" && node.props.children === "导入").props.onClick();
+importingTree = importingMount.draw();
+const importedCards = elements(importingTree).filter((node) => node.props["data-session-cost-override"] !== undefined);
+checkJson("importing adds the picked route as a row", importedCards.map((node) => node.props["data-session-cost-override"]), ["my-gateway/qwen3-32b", "my-gateway/llama-4"]);
+check("the display name arrives with the route", elements(importedCards[1]).filter((node) => node.type === "input")[2].props.value, "Llama 4");
+elements(importingTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
+await flush();
+check("saving writes both rows", Object.keys(importing.harness.writes[0][1]).length, 2);
+
+// A catalog that cannot be read must leave manual entry working.
+const offline = settingsHarness({ settingsValue: CONFIGURED, catalogFails: true });
+const offlineMount = mount(offline.component, { ...offline.face, t, view: "page" });
+offlineMount.draw();
+await flush();
+const offlineTree = offlineMount.draw();
+check("a failed catalog says so", textOf(offlineTree).includes("读不到模型目录"), true);
+check("manual entry survives a failed catalog", elements(offlineTree).some((node) => node.type === "button" && node.props.children === "手动添加空白覆盖"), true);
 
 // ── hidden cases ─────────────────────────────────────────────────────────────
 check("no projection renders nothing", render(undefined), null);

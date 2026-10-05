@@ -248,7 +248,7 @@ npm test
 node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 160 checks: the browser half, the tray and its settings page
+node test/bundle.test.mjs       # 167 checks: the browser half, the tray and its settings page
 node test/config.test.mjs       # 75 checks: the schema, the live wiring and the billing card
 ```
 

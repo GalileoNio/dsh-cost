@@ -640,6 +640,8 @@ check("a single foreign currency still converts", titleValueOf(openRender(SINGLE
 const UNRATED = { ...TWO_CURRENCIES, conversion: { currency: "$", rates: {} } };
 check("an unrated currency withholds the figure", titleValueOf(openRender(UNRATED)), undefined);
 checkJson("...while the totals stay complete", totalsOf(openRender(UNRATED)), ["¥1.00", "$1.00"]);
+checkJson("...and the tray names the rate it needs", notesOf(openRender(UNRATED)), ["汇率表缺少 ¥ 的汇率，未显示折算合计。"]);
+checkJson("a computable figure needs no note", notesOf(mixed), []);
 const ZERO_RATE = { ...TWO_CURRENCIES, conversion: { currency: "$", rates: { "¥": 0 } } };
 check("a zero rate is not a rate", titleValueOf(openRender(ZERO_RATE)), undefined);
 // An incomplete session makes the converted figure a lower bound too.
@@ -863,6 +865,26 @@ displaySelect.props.onChange({ target: { value: "€" } });
 fxTree = fxMount.draw();
 await flush();
 checkJson("picking a summary currency writes it", fx.harness.writes.filter((write) => write[0] === "displayCurrency"), [["displayCurrency", "€"]]);
+
+// The custom path. `""` is the "no conversion" value, so it cannot double as the
+// custom sentinel — it did, and choosing "custom" wrote `""`: the box stayed
+// hidden, the select snapped back to "no conversion", and because the value never
+// changed not even a write happened. That is a summary currency nobody could set.
+const typed = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
+const typedMount = mount(typed.component, { ...typed.face, t, view: "page" });
+let typedTree = typedMount.draw();
+const typedSelect = elements(typedTree).find((node) => node.type === "select" && node.props["aria-label"] === "折算显示币种");
+check("no custom box until custom is chosen", elements(typedTree).filter((node) => node.props["aria-label"] === "自定义…").length, 0);
+typedSelect.props.onChange({ target: { value: "\u0000custom" } });
+typedTree = typedMount.draw();
+const typedBox = elements(typedTree).find((node) => node.props["aria-label"] === "自定义…");
+check("choosing custom reveals the box", typedBox !== undefined, true);
+check("...without writing a value yet", typed.harness.writes.length, 0);
+typedBox.props.onChange({ target: { value: "₫" } });
+await flush();
+checkJson("...and typing one persists it", typed.harness.writes.filter((write) => write[0] === "displayCurrency"), [["displayCurrency", "₫"]]);
+typedTree = typedMount.draw();
+check("a stored custom symbol keeps the box open", elements(typedTree).some((node) => node.props["aria-label"] === "自定义…"), true);
 
 // The rate table: rows are editable, and only usable rates are stored.
 const rates = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });

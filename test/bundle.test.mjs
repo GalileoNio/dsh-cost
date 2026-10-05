@@ -495,6 +495,10 @@ function titleValueOf(tree) {
 	const value = flatten([title.props.children]).find((child) => child.props.className === "dshCost_titleValue");
 	return value === undefined ? undefined : textOf(value);
 }
+/** The list prices one render strikes through, in order. */
+function struckOf(tree) {
+	return elements(tree).filter((node) => node.props.className === "dshCost_was").map((node) => textOf(node));
+}
 /** The explanation the pill carries on hover, if any. */
 function pillHintOf(tree) {
 	return elements(tree).find((node) => node.props.className === "dshCost_pill").props.title;
@@ -792,6 +796,50 @@ const RATES_INCOMPLETE = { ...RATES_ONLY, unattributed: { ...NO_UNATTRIBUTED, at
 check("an incomplete session marks the figure a lower bound", titleTip(openRender(RATES_INCOMPLETE, moneyForm("$", { "¥": 0.5 }))), "按你输入的汇率折算，且为下限");
 
 
+// ── the savings comparison ───────────────────────────────────────────────────
+// Two discounts can be put back: a cache hit billed at the miss rate, and an
+// off-peak segment billed at its peak window. `list` is the window the Host sends
+// beside the billed one exactly when the two differ; when it is absent the billed
+// rates are list price, and only the cache discount can show.
+const savingsOn = (showSavings = true) => new StubConfigForm({ displayCurrency: "", fxRates: {}, showSavings });
+const OFFPEAK_PEAK = { miss: 4, hit: 0.08, write: 4, out: 16 };
+/** ¥6.40 billed, ¥52.00 at list price: the window doubles it and all 11M input tokens pay the miss rate. */
+const HALVED = {
+	groups: {
+		a: group("deepseek-official", "deepseek-flash", false, {
+			uncachedInputTokens: 1_000_000, cacheReadTokens: 10_000_000, cacheWriteTokens: 0, outputTokens: 500_000, attempts: 1
+		}, { currency: "¥", label: "Flash", rates: RATES_YUAN, list: OFFPEAK_PEAK, source: "preset" })
+	},
+	unattributed: NO_UNATTRIBUTED
+};
+checkJson("without the switch nothing is struck through", struckOf(openRender(HALVED, savingsOn(false))), []);
+checkJson("the list price is drawn struck through, then what was paid", struckOf(openRender(HALVED, savingsOn())), ["¥52.00", "¥52.00"]);
+const savingsTree = openRender(HALVED, savingsOn());
+check("...on the segment subtotal", textOf(elements(savingsTree).find((node) => node.props.className === "dshCost_subtotal")), "¥52.00¥6.40");
+check("...and on the total", textOf(elements(savingsTree).find((node) => node.props.className === "dshCost_amounts")), "¥52.00¥6.40");
+// A price with no peak window still saves on the cache: every hit charged as a miss.
+const CACHED = {
+	groups: {
+		a: group("my-gateway", "qwen3-32b", false, {
+			uncachedInputTokens: 0, cacheReadTokens: 10_000_000, cacheWriteTokens: 0, outputTokens: 0, attempts: 1
+		}, price("¥", "Cached", { miss: 2, hit: 0.04, write: 2, out: 8 }))
+	},
+	unattributed: NO_UNATTRIBUTED
+};
+// One row means no subtotal (the section's own rule), so the total is the only
+// place this one can show — and it does.
+checkJson("a cache-only saving shows the same way", struckOf(openRender(CACHED, savingsOn())), ["¥20.00"]);
+// A session at peak with no cache reads saved nothing, so nothing is struck through.
+const FULL_PRICE = {
+	groups: {
+		a: group("my-gateway", "qwen3-32b", true, {
+			uncachedInputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, attempts: 1
+		}, price("¥", "Full", { miss: 2, hit: 0.04, write: 2, out: 8 }))
+	},
+	unattributed: NO_UNATTRIBUTED
+};
+checkJson("a session that saved nothing strikes nothing through", struckOf(openRender(FULL_PRICE, savingsOn())), []);
+
 // ── the settings seats ───────────────────────────────────────────────────────
 // The Plugins page renders no automatic schema form: it renders whatever the
 // owning plugin claims for these seats, so a plugin with settings must claim
@@ -854,7 +902,7 @@ const pageTree = mount(configured.component, { ...pageProps, view: "page" }).dra
 // folded, and what is left is the four choices a session usually needs.
 checkJson("the advanced sections start folded", elements(pageTree).filter((node) => node.props["data-session-cost-fold"] !== undefined).map((node) => node.props["data-session-cost-fold"]), ["false", "false"]);
 check("...so no override row is on screen yet", routesOf(pageTree).length, 0);
-checkJson("the fields stack in the shell's order", elements(pageTree).filter((node) => node.props.className === "dshCost_field").length, 5);
+checkJson("the fields stack in the shell's order", elements(pageTree).filter((node) => node.props.className === "dshCost_field").length, 6);
 check("the editor offers no save control", elements(pageTree).some((node) => node.props["data-variant"] === "primary"), false);
 const enableSwitch = elements(pageTree).find((node) => node.props["data-session-cost-switch"] !== undefined);
 check("the editor shows the enable switch", enableSwitch?.props["data-session-cost-switch"], "true");
@@ -881,6 +929,15 @@ const untouched = mount(configured.component, { ...pageProps, view: "page" });
 await flush();
 check("an untouched form writes nothing", configured.harness.writes.length, 0);
 check("...and reports no status", statusOf(untouched.draw()), "");
+
+// The savings switch is a field like any other: it persists as it is toggled.
+const savingsField = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
+const savingsMount = mount(savingsField.component, { ...savingsField.face, t, view: "page" });
+const savingsSwitches = elements(savingsMount.draw()).filter((node) => node.props["data-session-cost-switch"] !== undefined);
+checkJson("the form shows both switches", savingsSwitches.map((node) => node.props["data-session-cost-switch"]), ["true", "false"]);
+savingsSwitches[1].props.onClick();
+await flush();
+checkJson("toggling the savings switch writes it", savingsField.harness.writes, [["showSavings", true]]);
 
 // Editing one rate writes only the prices field, and only the edited value.
 const edited = settingsHarness({ settingsValue: CONFIGURED });

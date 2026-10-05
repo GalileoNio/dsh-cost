@@ -205,7 +205,13 @@ title line:
 | Setting | Meaning |
 |---|---|
 | `displayCurrency` | The currency that figure is expressed in. Empty — the default — shows no figure at all. |
+| `showSavings` | Draws the cache-hit and off-peak discounts as a struck-through list price before every subtotal and total. Off by default. |
 | `fxRates` | Your own rates, e.g. `{"¥": 0.1467}`. Optional: they outrank every other source. |
+
+*List price* means the same tokens with both discounts put back: every input token
+charged at the cache-miss rate, at the price's **peak** window. Output only moves
+when the window does. A segment that saved nothing strikes nothing through, and a
+price with no peak window still shows the cache discount on its own.
 
 **Restore defaults** clears the whole user layer — price list, currencies, rate
 table and price overrides — returning the namespace to the Host's own defaults. It
@@ -300,7 +306,7 @@ node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/fx.test.mjs           # 32 checks: the reference rates behind the converted figure
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 210 checks: the browser half, the tray and its settings page
+node test/bundle.test.mjs       # 218 checks: the browser half, the tray and its settings page
 node test/config.test.mjs       # 78 checks: the schema, the live wiring and the billing card
 ```
 

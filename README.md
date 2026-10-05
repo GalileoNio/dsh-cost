@@ -248,7 +248,7 @@ npm test
 node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 154 checks: the browser half, the tray and its settings page
+node test/bundle.test.mjs       # 160 checks: the browser half, the tray and its settings page
 node test/config.test.mjs       # 75 checks: the schema, the live wiring and the billing card
 ```
 
@@ -267,10 +267,12 @@ stub only React and the DOM, so a passing run means the shipped code works.
   and DOM and drives the real components through a stateful mount: per-segment
   arithmetic, mixed currencies, disclosed incompleteness, the icon's intrinsic
   size and single stroke weight in both mount contexts, and the settings page end to end — the seats it
-  claims, the cards it draws, and the fact that a save writes only what
-  changed. Its `ConfigForm` stub is a class whose methods read `this.store`, so
-  the detached method references React hands to `useSyncExternalStore` fail the
-  suite exactly as they fail in the browser.
+  claims, the cards it draws, and the fact that each edit writes only the field
+  it changed. Its `ConfigForm` stub is a class whose methods read `this.store`,
+  so the detached method references React hands to `useSyncExternalStore` fail
+  the suite exactly as they fail in the browser, and it folds accepted writes back
+  into its section the way the real controller does — without that, a second edit
+  would keep restating fields the draft still disagreed with.
 - `rates-chunk.test.mjs` pins the table against the live preset lookup route by
   route, evaluates the generated source the way the browser does, and proves the
   writer is idempotent: an unchanged catalog must not rewrite the file or move the

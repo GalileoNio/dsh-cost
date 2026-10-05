@@ -218,11 +218,36 @@ class StubConfigForm {
 	}
 	set(field, value) {
 		this.writes.push([field, value]);
-		return Promise.resolve(!this.refuseWrites);
+		if (this.refuseWrites) return Promise.resolve(false);
+		return Promise.resolve(this.fold(field, value));
 	}
 	unset(field) {
 		this.writes.push([field, null]);
-		return Promise.resolve(!this.refuseWrites);
+		if (this.refuseWrites) return Promise.resolve(false);
+		const section = { ...(this.store.snapshot.value ?? {}) };
+		delete section[field];
+		this.publish(section);
+		return Promise.resolve(true);
+	}
+	/**
+	 * Fold an accepted write back into the mirror, the way the real
+	 * ConfigFormController does: the section the form reads next already contains
+	 * the write, which is what keeps the following edit's diff down to its own
+	 * field instead of restating everything the draft still disagrees with.
+	 */
+	fold(field, value) {
+		this.publish({ ...(this.store.snapshot.value ?? {}), [field]: value });
+		return true;
+	}
+	publish(value) {
+		this.store.snapshot = {
+			...this.store.snapshot,
+			status: "ready",
+			value,
+			user: { ...(this.store.snapshot.user ?? {}), ...value },
+			revision: (this.store.snapshot.revision ?? 0) + 1
+		};
+		for (const listener of [...this.listeners]) listener();
 	}
 	mutate() {
 		return Promise.resolve(!this.refuseWrites);
@@ -680,7 +705,8 @@ check("the boundary passes children through while healthy", healthy.render(), "C
 
 const pageTree = mount(configured.component, { ...pageProps, view: "page" }).draw();
 checkJson("one card per override", elements(pageTree).filter((node) => node.props["data-session-cost-override"] !== undefined).map((node) => node.props["data-session-cost-override"]), ["my-gateway/qwen3-32b"]);
-check("the editor offers a save control", elements(pageTree).some((node) => node.props.className === "dshCost_button dshCost_primary"), true);
+// There is no save control to forget: every edit persists as it is made.
+check("the editor offers no save control", elements(pageTree).some((node) => node.props.className === "dshCost_button dshCost_primary"), false);
 check("the editor shows the enable switch", elements(pageTree).some((node) => node.type === "input" && node.props.type === "checkbox"), true);
 check("the editor shows the window selector", elements(pageTree).some((node) => node.type === "select"), true);
 // Text has to come from the dictionary: the real `t` falls back to the key
@@ -690,12 +716,12 @@ const strings = elements(pageTree).map((node) => node.props.children).filter((ch
 checkJson("no label renders as a raw dictionary key", strings.filter((text) => /^(settings|dialog)\./.test(text)), []);
 check("building the editor writes nothing", configured.harness.writes.length, 0);
 
-// Saving an untouched form must not rewrite the configuration.
+// An untouched form writes nothing and says nothing: with no save control there
+// is no idle state to explain.
 const untouched = mount(configured.component, { ...pageProps, view: "page" });
-elements(untouched.draw()).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
 await flush();
-check("saving an untouched form writes nothing", configured.harness.writes.length, 0);
-check("an untouched save reports saved", elements(untouched.draw()).find((node) => node.props.className === "dshCost_status").props.children, "已保存");
+check("an untouched form writes nothing", configured.harness.writes.length, 0);
+check("...and reports no status", elements(untouched.draw()).find((node) => node.props.className === "dshCost_status").props.children, "");
 
 // Editing one rate writes only the prices field, and only the edited value.
 const edited = settingsHarness({ settingsValue: CONFIGURED });
@@ -707,13 +733,59 @@ const cardInputs = elements(card).filter((node) => node.type === "input");
 check("a card exposes the key, currency, label, four rates and four peak rates", cardInputs.length, 11);
 cardInputs[3].props.onChange({ target: { value: "1.5" } });
 editedTree = mounted.draw();
-elements(editedTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
 await flush();
 check("editing one rate writes exactly one field", edited.harness.writes.length, 1);
 check("the write targets the prices table", edited.harness.writes[0][0], "prices");
 check("the edited rate reaches the write", edited.harness.writes[0][1]["my-gateway/qwen3-32b"].miss, 1.5);
 check("the untouched rates survive", JSON.stringify([edited.harness.writes[0][1]["my-gateway/qwen3-32b"].hit, edited.harness.writes[0][1]["my-gateway/qwen3-32b"].out]), JSON.stringify([0.02, 0.4]));
 check("a blank number box means zero", edited.harness.writes[0][1]["my-gateway/qwen3-32b"].peak.miss, 0);
+editedTree = mounted.draw();
+check("an accepted edit reports itself saved", elements(editedTree).find((node) => node.props.className === "dshCost_status").props.children, "已保存");
+
+// The Host materializes every schema default into the section it resolves —
+// `label: ""`, `currency: ""`, and an all-zero peak window. None of that is an
+// edit, and comparing the raw objects would spend a write restating it.
+const materialized = settingsHarness({
+	settingsValue: {
+		...CONFIGURED,
+		prices: { "my-gateway/qwen3-32b": { label: "", currency: "", miss: 0.2, hit: 0.02, write: 0.2, out: 0.4, peak: { miss: 0, hit: 0, write: 0, out: 0 } } }
+	}
+});
+const materializedMount = mount(materialized.component, { ...materialized.face, t, view: "page" });
+materializedMount.draw();
+await flush();
+check("the Host's materialized defaults are not an edit", materialized.harness.writes.length, 0);
+
+// Each edit writes what it changed and nothing else.
+const sequential = settingsHarness({ settingsValue: CONFIGURED });
+const sequentialMount = mount(sequential.component, { ...sequential.face, t, view: "page" });
+let sequentialTree = sequentialMount.draw();
+elements(sequentialTree).find((node) => node.type === "input" && node.props.type === "checkbox").props.onChange({ target: { checked: false } });
+await flush();
+checkJson("an edited switch writes only that field", sequential.harness.writes.map((write) => write[0]), ["enabled"]);
+sequentialTree = sequentialMount.draw();
+elements(sequentialTree).find((node) => node.props["data-session-cost-override"] !== undefined);
+const sequentialCard = elements(sequentialTree).find((node) => node.props["data-session-cost-override"] !== undefined);
+elements(sequentialCard).filter((node) => node.type === "input")[3].props.onChange({ target: { value: "1.5" } });
+await flush();
+checkJson("...and the next edit writes only its own", sequential.harness.writes.map((write) => write[0]), ["enabled", "prices"]);
+check("re-selecting the same value writes nothing new", (() => {
+	const stable = settingsHarness({ settingsValue: CONFIGURED });
+	const stableMount = mount(stable.component, { ...stable.face, t, view: "page" });
+	const stableTree = stableMount.draw();
+	// `offpeak` appears in the rate-window select alone, so it identifies it.
+	const select = elements(stableTree).find((node) => node.type === "select" && elements(node).some((child) => child.props.value === "offpeak"));
+	select.props.onChange({ target: { value: "auto" } });
+	return stable.harness.writes.length;
+})(), 0);
+
+// Removing a row is an edit like any other: it has to reach the Host.
+const removing = settingsHarness({ settingsValue: CONFIGURED });
+const removingMount = mount(removing.component, { ...removing.face, t, view: "page" });
+const removeButton = elements(removingMount.draw()).find((node) => node.props.className === "dshCost_remove");
+removeButton.props.onClick();
+await flush();
+check("removing a row persists the empty table", JSON.stringify(removing.harness.writes), JSON.stringify([["prices", {}]]));
 
 // Adding a row writes a second entry, and a refused write is reported.
 const added = settingsHarness({ settingsValue: CONFIGURED });
@@ -722,7 +794,6 @@ let addedTree = addedMounted.draw();
 elements(addedTree).find((node) => node.type === "button" && node.props.children === "手动添加空白覆盖").props.onClick();
 addedTree = addedMounted.draw();
 check("adding a row shows a second card", elements(addedTree).filter((node) => node.props["data-session-cost-override"] !== undefined).length, 2);
-elements(addedTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
 await flush();
 check("an unnamed added row is not written", added.harness.writes.length, 0);
 
@@ -731,7 +802,6 @@ const refusedMounted = mount(refused.component, { settings: refused.face.setting
 const refusedCard = elements(refusedMounted.draw()).find((node) => node.props["data-session-cost-override"] !== undefined);
 elements(refusedCard).filter((node) => node.type === "input")[3].props.onChange({ target: { value: "2" } });
 const refusedTree = refusedMounted.draw();
-elements(refusedTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
 await flush();
 check("a refused write reports failure", elements(refusedMounted.draw()).find((node) => node.props.className === "dshCost_status").props.children, "保存失败");
 
@@ -751,7 +821,6 @@ check("the currency control offers an escape hatch", elements(currencySelect).so
 check("a preset symbol needs no text box", elements(currencyTree).some((node) => node.props.className === "dshCost_input dshCost_currency"), false);
 currencySelect.props.onChange({ target: { value: "HK$" } });
 currencyTree = currencyMount.draw();
-elements(currencyTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
 await flush();
 checkJson("picking a symbol writes it", currency.harness.writes.filter((write) => write[0] === "currency"), [["currency", "HK$"]]);
 
@@ -772,14 +841,12 @@ checkJson("...including automatic detection", elements(cardsSelect).filter((chil
 check("the resolved choice is selected", cardsSelect.props.value, "auto");
 cardsSelect.props.onChange({ target: { value: "usd" } });
 cardsTree = cardsMount.draw();
-elements(cardsTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
 await flush();
 checkJson("picking a list writes it", cards.harness.writes.filter((write) => write[0] === "officialRates"), [["officialRates", "usd"]]);
 
 // Saving an untouched form still writes nothing once the field is resolved.
 const settled = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
 const settledMount = mount(settled.component, { ...settled.face, t, view: "page" });
-elements(settledMount.draw()).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
 await flush();
 check("a resolved default is not restated on save", settled.harness.writes.length, 0);
 
@@ -794,7 +861,6 @@ check("...including no conversion at all", elements(displaySelect).some((child) 
 check("no conversion is the resolved default", displaySelect.props.value, "");
 displaySelect.props.onChange({ target: { value: "€" } });
 fxTree = fxMount.draw();
-elements(fxTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
 await flush();
 checkJson("picking a summary currency writes it", fx.harness.writes.filter((write) => write[0] === "displayCurrency"), [["displayCurrency", "€"]]);
 
@@ -814,7 +880,6 @@ ratesTree = ratesMount.draw();
 const rateRowNext = elements(ratesTree).find((node) => node.props["data-session-cost-rate"] !== undefined);
 elements(rateRowNext).filter((node) => node.type === "input")[1].props.onChange({ target: { value: "0.1467" } });
 ratesTree = ratesMount.draw();
-elements(ratesTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
 await flush();
 checkJson("a filled rate row is stored as a number", rates.harness.writes.filter((write) => write[0] === "fxRates"), [["fxRates", { "¥": 0.1467 }]]);
 
@@ -823,7 +888,6 @@ checkJson("a filled rate row is stored as a number", rates.harness.writes.filter
 const blank = settingsHarness({ settingsValue: { ...CONFIGURED, fxRates: { "¥": 0 } }, catalog: [] });
 const blankMount = mount(blank.component, { ...blank.face, t, view: "page" });
 check("a stored rate round-trips into the table", elements(blankMount.draw()).find((node) => node.props["data-session-cost-rate"] !== undefined).props["data-session-cost-rate"], "¥");
-elements(blankMount.draw()).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
 await flush();
 check("an untouched rate table is not restated", blank.harness.writes.length, 0);
 
@@ -852,7 +916,6 @@ importingTree = importingMount.draw();
 const importedCards = elements(importingTree).filter((node) => node.props["data-session-cost-override"] !== undefined);
 checkJson("importing adds the picked route as a row", importedCards.map((node) => node.props["data-session-cost-override"]), ["my-gateway/qwen3-32b", "my-gateway/llama-4"]);
 check("the display name arrives with the route", elements(importedCards[1]).filter((node) => node.type === "input")[2].props.value, "Llama 4");
-elements(importingTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
 await flush();
 check("saving writes both rows", Object.keys(importing.harness.writes[0][1]).length, 2);
 
@@ -885,7 +948,6 @@ elements(prefillTree).find((node) => node.type === "button" && node.props.childr
 prefillTree = prefillMount.draw();
 const prefillCard = elements(prefillTree).filter((node) => node.props["data-session-cost-override"] !== undefined)[1];
 checkJson("the preset rates arrive with the route, zeros left blank", elements(prefillCard).filter((node) => node.type === "input").map((node) => node.props.value), ["my-gateway/llama-4", "$", "Llama 4", "1", "0.1", "1.25", "5", "", "", "", ""]);
-elements(prefillTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
 await flush();
 checkJson("a pre-filled row writes the preset", prefilling.harness.writes[0][1]["my-gateway/llama-4"], { currency: "$", label: "Llama 4", miss: 1, hit: 0.1, write: 1.25, out: 5, peak: { miss: 0, hit: 0, write: 0, out: 0 } });
 

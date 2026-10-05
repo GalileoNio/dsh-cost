@@ -466,17 +466,17 @@ checkJson("the unpriced route is named", notesOf(openRender(WITH_UNPRICED))[0], 
 // constrained it inside the pill alone, so the disclosure panel drew it at the
 // panel's full 360px width.
 const pillIcon = resolve(render(TWO_SEGMENTS).props.children[0].props.children.props.children[0]);
-check("the pill icon carries the size the dock's other icons use", pillIcon.props.width, 16);
-check("the pill icon carries that height too", pillIcon.props.height, 16);
+check("the pill icon carries sized against the icons beside it", pillIcon.props.width, 15);
+check("the pill icon is square", pillIcon.props.height, 15);
 const titleBar = panelChildren(open).find((child) => child.props.className === "dshCost_title");
 const panelIcon = resolve(flatten(titleBar.props.children)[0]);
-check("the panel icon carries an intrinsic width", panelIcon.props.width, 16);
-check("the panel icon carries an intrinsic height", panelIcon.props.height, 16);
+check("the panel icon carries an intrinsic width", panelIcon.props.width, 15);
+check("the panel icon carries an intrinsic height", panelIcon.props.height, 15);
 check("both mounts share one viewBox", panelIcon.props.viewBox, pillIcon.props.viewBox);
 
 const sheet = styleTags[0].textContent;
-check("the class sheet bounds a pill icon", /\.dshCost_pill svg[^{]*\{[^}]*width:16px/.test(sheet), true);
-check("the class sheet bounds a panel icon", /\.dshCost_panel svg[^{]*\{[^}]*width:16px/.test(sheet), true);
+check("the class sheet bounds a pill icon", /\.dshCost_pill svg[^{]*\{[^}]*width:15px/.test(sheet), true);
+check("the class sheet bounds a panel icon", /\.dshCost_panel svg[^{]*\{[^}]*width:15px/.test(sheet), true);
 
 // ── the mark matches the weight of the icons it sits among ──────────────────
 // The dock's line icons read at about one unit in a 16-unit box, which is also

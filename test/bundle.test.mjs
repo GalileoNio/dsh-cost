@@ -987,6 +987,15 @@ const englishSelect = elements(englishTree).find((node) => node.type === "select
 check("...in the language the page is rendered in", textOf(elements(englishSelect).find((child) => child.type === "option" && child.props.value === "NT$")), "NT$ New Taiwan dollar");
 check("...including the ambiguous one", textOf(symbolOption(currencySelect, "kr")), "kr 克朗（北欧）");
 check("the custom escape hatch keeps its own copy", textOf(symbolOption(currencySelect, "\u0000custom")), "自定义…");
+// The order is fixed, and pinned here: the two currencies this plugin prices in
+// come first, then the majors, then the Asia-Pacific ones, then the rest.
+checkJson("the list starts with the currencies this plugin prices in", elements(currencySelect).filter((child) => child.type === "option").slice(0, 2).map((child) => child.props.value), ["$", "¥"]);
+checkJson("...and keeps its deliberate order", elements(currencySelect).filter((child) => child.type === "option").map((child) => child.props.value), ["$", "¥", "\u20ac", "\u00a3", "JP\u00a5", "HK$", "NT$", "S$", "\u20a9", "\u20b9", "A$", "C$", "CHF", "R$", "\u20ba", "\u20bd", "kr", "\u0000custom"]);
+// The yen shares its glyph with the yuan, so it carries the country first — and
+// every option names its currency, so neither is left to the reader.
+check("the yen is offered apart from the yuan", textOf(symbolOption(currencySelect, "JP\u00a5")), "JP¥ 日元");
+check("...named in English too", textOf(elements(englishSelect).find((child) => child.type === "option" && child.props.value === "JP\u00a5")), "JP¥ Japanese yen");
+check("every option names its currency", elements(currencySelect).filter((child) => child.type === "option" && child.props.value !== "\u0000custom").every((child) => textOf(child).length > child.props.value.length), true);
 check("the currency control offers an escape hatch", elements(currencySelect).some((child) => child.type === "option" && child.props.value === "\u0000custom"), true);
 check("a preset symbol needs no text box", elements(currencyTree).some((node) => node.props.className === "dshCost_input dshCost_custom"), false);
 currencySelect.props.onChange({ target: { value: "HK$" } });

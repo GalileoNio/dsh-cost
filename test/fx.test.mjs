@@ -61,6 +61,12 @@ check("an unusable rate is dropped", parseEcbRates('<Cube time="2026-10-02"><Cub
 const inPounds = crossRates(BUILTIN_PER_EUR, "£");
 close("one dollar in pounds is the reference ratio", inPounds["$"], 0.85033 / 1.1225);
 close("one euro in pounds is the reference ratio", inPounds["€"], 0.85033);
+// The yen shares its glyph with the yuan, so it is mapped under its own symbol and
+// has to resolve on its own: 1 JPY in CNY is perEur(CNY)/perEur(JPY).
+const inYuan = crossRates(BUILTIN_PER_EUR, "¥");
+close("one yen in yuan is the reference ratio", inYuan["JP¥"], 7.5259 / 176.99);
+check("...mapped under its own symbol, not the yuan's", SYMBOL_CURRENCY["¥"], "CNY");
+check("...which the yen names separately", SYMBOL_CURRENCY["JP¥"], "JPY");
 check("the display currency is not restated", inPounds["£"], undefined);
 check("every identified symbol resolves", Object.keys(inPounds).length, Object.keys(SYMBOL_CURRENCY).length - 1 - 2);
 // `kr` is the crown of three countries, so it names no currency to convert; `₽`

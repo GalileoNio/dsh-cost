@@ -228,27 +228,26 @@ const afterAnswer = Object.values(detected.wire.view(detectedState).groups)[0];
 check("...then the detected card takes over", afterAnswer.price.currency, OFFICIAL_CURRENCY_USD);
 check("...at the detected card's rate", afterAnswer.price.rates.miss, 0.15);
 
-// ── the conversion policy rides the wire only when it is configured ──────────
-check("no summary currency means no conversion on the wire", wireFor(Config({}), "deepseek-official", "deepseek-flash", USAGE).conversion, undefined);
-const converting = wireFor(Config({ displayCurrency: "$", fxRates: { "¥": 0.15 } }), "deepseek-official", "deepseek-flash", USAGE);
-check("the wire carries the target currency", converting.conversion.currency, "$");
-check("a rate the user entered is the one published", converting.conversion.rates["¥"], 0.15);
-check("...and is labelled as theirs", converting.conversion.sources["¥"], "manual");
-check("...alongside the priced groups, not instead of them", converting.groups[Object.keys(converting.groups)[0]].price.currency, OFFICIAL_CURRENCY);
-
-// With no rate entered, the reference data answers instead — that is the whole
-// point of shipping a snapshot: a chosen currency always produces a figure.
-const referenced = wireFor(Config({ displayCurrency: "€" }), "deepseek-official", "deepseek-flash", USAGE);
-check("a currency with no manual rate still converts", typeof referenced.conversion.rates["¥"], "number");
-check("...from the snapshot, named as such", referenced.conversion.sources["¥"], "snapshot");
-check("...dated, so an ageing snapshot is visible", /^\d{4}-\d{2}-\d{2}$/.test(referenced.conversion.asOf), true);
-// 1 CNY in EUR is the ECB cross rate: perEur(EUR) / perEur(CNY).
-check("...at the rate the reference data implies", Math.abs(referenced.conversion.rates["¥"] - 1 / 7.5259) < 1e-9, true);
-// A symbol no source carries — `kr` is three currencies, so it is deliberately
-// unmapped — is the one case that still withholds, and the tray names it.
-const unmappable = wireFor(Config({ displayCurrency: "kr" }), "deepseek-official", "deepseek-flash", USAGE);
-check("a symbol no source identifies publishes no rates", JSON.stringify(unmappable.conversion.rates), "{}");
-check("...and the browser withholds the figure rather than guessing", unmappable.conversion.rates["¥"], undefined);
+// ── the wire carries reference rates, not a resolved figure ─────────────────
+// Which currency the tray's figure is expressed in is a presentation setting, so
+// it is resolved in the browser — that is what makes switching it visible at once
+// instead of waiting for the next session event to recompose this view. The wire
+// publishes the data: the EUR-based table, the symbols it answers for, and the
+// date it was published.
+const plain = wireFor(Config({}), "deepseek-official", "deepseek-flash", USAGE);
+check("the reference rates ride along whether or not a figure is configured", typeof plain.reference, "object");
+check("...based on the euro, which a table of EUR-based rates needs defined", plain.reference.perEur.EUR, 1);
+check("...with the published rates", Math.abs(plain.reference.perEur.CNY - 7.5259) < 1e-9, true);
+check("...mapped onto the symbols the settings offer", plain.reference.symbols["\u00a5"], "CNY");
+check("...dated, so an ageing snapshot is visible", /^\d{4}-\d{2}-\d{2}$/.test(plain.reference.asOf), true);
+// No network in this suite, so the snapshot answers; the live feed replaces it
+// when it lands, which is what the pricing revision covers.
+check("...and named as the snapshot when the feed has not answered", plain.reference.source, "snapshot");
+check("...alongside the priced groups, not instead of them", plain.groups[Object.keys(plain.groups)[0]].price.currency, OFFICIAL_CURRENCY);
+// A configured target currency changes nothing on the wire: the browser reads it
+// from the settings mirror, which is the whole point of resolving it there.
+const converting = wireFor(Config({ displayCurrency: "$", fxRates: { "\u00a5": 0.15 } }), "deepseek-official", "deepseek-flash", USAGE);
+check("a configured summary currency does not reshape the wire", JSON.stringify(converting.reference), JSON.stringify(plain.reference));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

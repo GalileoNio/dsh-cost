@@ -203,10 +203,26 @@ const primitives = {
 			key: "row",
 			type: "button",
 			onClick: onToggle
-		}, title), open ? children : collapsedContent]);
+		}, title), react.createElement("div", {
+			key: "content"
+		}, open ? children : collapsedContent)]);
 	},
 	IconChevronDownOutlineRegular(props) {
 		return react.createElement("svg", props);
+	},
+	Modal({ open, onClose, title, description, footer, children }) {
+		if (open !== true) return null;
+		return react.createElement("div", {
+			"data-session-cost-modal": title
+		}, [react.createElement("p", {
+			key: "title"
+		}, title), react.createElement("p", {
+			key: "description"
+		}, description), react.createElement("div", {
+			key: "footer"
+		}, footer), react.createElement("div", {
+			key: "body"
+		}, children)]);
 	}
 };
 function bundleRequire(specifier) {
@@ -227,14 +243,17 @@ function bundleRequire(specifier) {
  * passing.
  */
 class StubConfigForm {
-	constructor(value, refuseWrites) {
+	constructor(value, refuseWrites, user) {
 		this.store = {
 			snapshot: {
 				status: value === undefined ? "loading" : "ready",
 				writable: true,
 				mode: "host",
 				revision: 1,
-				value
+				value,
+				// The raw user layer: a field's PRESENCE there is what marks it
+				// overridden, which is what restoring clears and what enables it.
+				user
 			}
 		};
 		this.listeners = new Set();
@@ -294,7 +313,7 @@ class StubConfigForm {
 function applyToFakeContext(options = {}) {
 	const log = [];
 	const registered = [];
-	const settings = new StubConfigForm(options.settingsValue, options.refuseWrites);
+	const settings = new StubConfigForm(options.settingsValue, options.refuseWrites, options.settingsUser);
 	const writes = settings.writes;
 	const settingsState = settings.getSnapshot();
 	const ctx = {
@@ -387,15 +406,16 @@ const RATES_USD = { miss: 1, hit: 0.1, write: 1, out: 2 };
 const NO_UNATTRIBUTED = { uncachedInputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, attempts: 0 };
 
 /** Render the real component once. */
-function render(projected) {
+function render(projected, settings) {
 	return applied.captured.component({
 		useProjection: (key) => (key === "sessionCost" ? projected : undefined),
+		settings,
 		t
 	});
 }
-function openRender(projected) {
+function openRender(projected, settings) {
 	harnessOpen = true;
-	const tree = render(projected);
+	const tree = render(projected, settings);
 	harnessOpen = false;
 	return tree;
 }
@@ -474,6 +494,12 @@ function titleValueOf(tree) {
 	const title = panelChildren(tree).find((child) => child.props.className === "dshCost_title");
 	const value = flatten([title.props.children]).find((child) => child.props.className === "dshCost_titleValue");
 	return value === undefined ? undefined : textOf(value);
+}
+/** The tooltip the converted figure carries. */
+function titleTip(tree) {
+	const title = panelChildren(tree).find((child) => child.props.className === "dshCost_title");
+	const value = flatten([title.props.children]).find((child) => child.props.className === "dshCost_titleValue");
+	return value === undefined ? undefined : value.props.title;
 }
 /** The rendered segment sections. */
 function sectionsOf(tree) {
@@ -687,9 +713,20 @@ check("...the shell's width band", /\.dshCost_panel\{[^}]*max-width:min\(440px/.
 check("the title rule is the shell's hairline", /\.dshCost_rule\{[^}]*border-top:\.5px solid var\(--dsw-alias-border-l2\)/.test(sheet), true);
 
 // ── the converted summary figure ─────────────────────────────────────────────
-// Only the policy rides the wire — target currency plus the rates the user
-// entered — and the multiplication happens here, where the totals already are.
-const TWO_CURRENCIES = {
+// Which currency the figure is expressed in, and the user's own rates, are read
+// from the settings mirror in the browser — a projection is recomposed on session
+// events alone, so resolving this on the Host would leave a switch stale until the
+// next one. The wire publishes the reference data it is resolved against.
+const REFERENCE = {
+	perEur: { EUR: 1, USD: 1.1225, CNY: 7.5259, GBP: 0.85033 },
+	symbols: { "€": "EUR", "$": "USD", "¥": "CNY", "£": "GBP" },
+	asOf: "2026-10-02",
+	source: "reference"
+};
+const SNAPSHOT_RATES = { ...REFERENCE, source: "snapshot" };
+/** The settings face the tray reads, as the mirror would hand it over. */
+const moneyForm = (displayCurrency, fxRates) => new StubConfigForm({ displayCurrency, fxRates });
+const RATES_ONLY = {
 	groups: {
 		yuan: group("deepseek-official", "deepseek-flash", false, {
 			uncachedInputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, attempts: 1
@@ -699,45 +736,40 @@ const TWO_CURRENCIES = {
 		}, price("$", "Claude", { miss: 1, hit: 0, write: 0, out: 0 }))
 	},
 	unattributed: NO_UNATTRIBUTED,
-	conversion: { currency: "$", rates: { "¥": 0.15 }, sources: { "¥": "manual" }, asOf: null }
+	reference: REFERENCE
 };
-const mixed = openRender(TWO_CURRENCIES);
-check("the title carries the converted total", titleValueOf(mixed), "≈$1.15");
+// 1 ¥ is 1.1225/7.5259 = $0.149 by the reference table, and $0.50 by the rate the
+// user entered — far enough apart that precedence is visible in the figure itself.
+const mixed = openRender(RATES_ONLY, moneyForm("$", { "¥": 0.5 }));
+check("the title carries the converted total", titleValueOf(mixed), "≈$1.50");
 checkJson("the totals still list every currency as billed", totalsOf(mixed), ["¥1.00", "$1.00"]);
-const titleTip = (tree) => flatten([panelChildren(tree).find((child) => child.props.className === "dshCost_title").props.children]).find((child) => child.props.className === "dshCost_titleValue").props.title;
 check("the converted figure is marked as a conversion", titleTip(mixed), "按你输入的汇率折算");
-// ...and says which rates, because a converted figure is never a vendor price.
-const REFERENCED = { ...TWO_CURRENCIES, conversion: { currency: "$", rates: { "¥": 0.15 }, sources: { "¥": "reference" }, asOf: "2026-10-02" } };
-check("a reference rate is named with its date", titleTip(openRender(REFERENCED)), "按参考汇率（ECB 2026-10-02）折算");
-const SNAPSHOT_FX = { ...TWO_CURRENCIES, conversion: { currency: "$", rates: { "¥": 0.15 }, sources: { "¥": "snapshot" }, asOf: "2026-10-02" } };
-check("a snapshot is named as built-in", titleTip(openRender(SNAPSHOT_FX)), "按内置参考汇率（2026-10-02）折算");
-// A session that used one currency the user rated by hand and one it did not.
-const BOTH_FX = {
-	groups: {
-		yuan: TWO_CURRENCIES.groups.yuan,
-		euro: group("acme", "eu-model", false, {
-			uncachedInputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, attempts: 1
-		}, price("€", "EU Model", { miss: 1, hit: 0, write: 0, out: 0 }))
-	},
-	unattributed: NO_UNATTRIBUTED,
-	conversion: { currency: "$", rates: { "¥": 0.15, "€": 1.1 }, sources: { "¥": "manual", "€": "reference" }, asOf: "2026-10-02" }
-};
-check("a mixed table names both", titleTip(openRender(BOTH_FX)), "按参考汇率（ECB 2026-10-02）与你输入的汇率折算");
-check("no conversion configured leaves today's tray untouched", titleValueOf(open), undefined);
-// The display currency rates itself, so one currency alone still converts.
-const SINGLE = { ...TWO_CURRENCIES, groups: { yuan: TWO_CURRENCIES.groups.yuan } };
-check("a single foreign currency still converts", titleValueOf(openRender(SINGLE)), "≈$0.150");
-// A currency the table does not rate withholds the figure rather than guessing.
-const UNRATED = { ...TWO_CURRENCIES, conversion: { currency: "$", rates: {} } };
-check("an unrated currency withholds the figure", titleValueOf(openRender(UNRATED)), undefined);
-checkJson("...while the totals stay complete", totalsOf(openRender(UNRATED)), ["¥1.00", "$1.00"]);
-checkJson("...and the tray names the rate it needs", notesOf(openRender(UNRATED)), ["汇率表缺少 ¥ 的汇率，未显示折算合计。"]);
+// The reference data answers when the user has entered nothing.
+check("a reference rate is used when the user entered none", titleValueOf(openRender(RATES_ONLY, moneyForm("$", {}))), "≈$1.15");
+check("...and is named with its date", titleTip(openRender(RATES_ONLY, moneyForm("$", {}))), "按参考汇率（ECB 2026-10-02）折算");
+check("a snapshot is named as built-in", titleTip(openRender({ ...RATES_ONLY, reference: SNAPSHOT_RATES }, moneyForm("$", {}))), "按内置参考汇率（2026-10-02）折算");
+// One currency the user rated by hand and one they did not: both show in the label.
+const EURO_GROUP = group("acme", "eu-model", false, {
+	uncachedInputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, attempts: 1
+}, price("€", "EU Model", { miss: 1, hit: 0, write: 0, out: 0 }));
+const TWO_SOURCES = { ...RATES_ONLY, groups: { ...RATES_ONLY.groups, euro: EURO_GROUP } };
+check("a mixed table names both", titleTip(openRender(TWO_SOURCES, moneyForm("$", { "¥": 0.5 }))), "按参考汇率（ECB 2026-10-02）与你输入的汇率折算");
+check("no summary currency configured leaves today's tray untouched", titleValueOf(openRender(RATES_ONLY, moneyForm("", {}))), undefined);
+check("...and no settings face at all does the same", titleValueOf(openRender(RATES_ONLY, undefined)), undefined);
+// The target currency rates itself, so one currency alone still converts.
+const SINGLE_FX = { ...RATES_ONLY, groups: { yuan: RATES_ONLY.groups.yuan } };
+check("a single foreign currency still converts", titleValueOf(openRender(SINGLE_FX, moneyForm("$", {}))), "≈$0.149");
+// A currency no source can identify withholds the figure rather than guessing.
+const UNRATED = { ...RATES_ONLY, reference: { ...REFERENCE, symbols: { "€": "EUR", "$": "USD" } } };
+check("an unrated currency withholds the figure", titleValueOf(openRender(UNRATED, moneyForm("$", {}))), undefined);
+checkJson("...while the totals stay complete", totalsOf(openRender(UNRATED, moneyForm("$", {}))), ["¥1.00", "$1.00"]);
+checkJson("...and the tray names the rate it needs", notesOf(openRender(UNRATED, moneyForm("$", {}))), ["汇率表缺少 ¥ 的汇率，未显示折算合计。"]);
 checkJson("a computable figure needs no note", notesOf(mixed), []);
-const ZERO_RATE = { ...TWO_CURRENCIES, conversion: { currency: "$", rates: { "¥": 0 } } };
-check("a zero rate is not a rate", titleValueOf(openRender(ZERO_RATE)), undefined);
+check("a zero rate is not a rate, so the reference answers", titleValueOf(openRender(RATES_ONLY, moneyForm("$", { "¥": 0 }))), "≈$1.15");
 // An incomplete session makes the converted figure a lower bound too.
-const MIXED_INCOMPLETE = { ...TWO_CURRENCIES, unattributed: { ...NO_UNATTRIBUTED, attempts: 2 } };
-check("an incomplete session marks the figure a lower bound", titleTip(openRender(MIXED_INCOMPLETE)), "按你输入的汇率折算，且为下限");
+const RATES_INCOMPLETE = { ...RATES_ONLY, unattributed: { ...NO_UNATTRIBUTED, attempts: 2 } };
+check("an incomplete session marks the figure a lower bound", titleTip(openRender(RATES_INCOMPLETE, moneyForm("$", { "¥": 0.5 }))), "按你输入的汇率折算，且为下限");
+
 
 // ── the settings seats ───────────────────────────────────────────────────────
 // The Plugins page renders no automatic schema form: it renders whatever the
@@ -1014,6 +1046,42 @@ const blankMount = mount(blank.component, { ...blank.face, t, view: "page" });
 check("a stored rate round-trips into the table", elements(unfold(blankMount, "汇率表")).find((node) => node.props["data-session-cost-fx"] !== undefined).props["data-session-cost-fx"], "¥");
 await flush();
 check("an untouched rate table is not restated", blank.harness.writes.length, 0);
+
+// ── restoring the defaults ───────────────────────────────────────────────────
+// Restoring clears the user layer instead of writing defaults back: a field
+// absent from it re-inherits the composition, which is where the defaults are
+// declared. A field present but equal to its default is still an override, so the
+// control reads the user layer rather than comparing values.
+const restoring = settingsHarness({ settingsValue: CONFIGURED, settingsUser: CONFIGURED });
+const restoringMount = mount(restoring.component, { ...restoring.face, t, view: "page" });
+let restoringTree = restoringMount.draw();
+const restoreButton = elements(restoringTree).find((node) => node.type === "button" && node.props.children === "恢复默认设置");
+check("the page offers a restore", restoreButton !== undefined, true);
+check("...enabled while something is overridden", restoreButton.props.disabled, false);
+check("...with nothing asked yet", elements(restoringTree).some((node) => node.props["data-session-cost-modal"] !== undefined), false);
+restoreButton.props.onClick();
+restoringTree = restoringMount.draw();
+check("...which confirms before clearing anything", elements(restoringTree).find((node) => node.props["data-session-cost-modal"] !== undefined)?.props["data-session-cost-modal"], "恢复默认设置");
+check("...writing nothing while it asks", restoring.harness.writes.length, 0);
+elements(restoringTree).find((node) => node.type === "button" && node.props.children === "取消").props.onClick();
+restoringTree = restoringMount.draw();
+check("cancelling writes nothing", restoring.harness.writes.length, 0);
+// Confirming clears every overridden field.
+elements(restoringTree).find((node) => node.type === "button" && node.props.children === "恢复默认设置").props.onClick();
+restoringTree = restoringMount.draw();
+elements(restoringTree).find((node) => node.type === "button" && node.props.children === "恢复").props.onClick();
+await flush();
+checkJson("confirming clears every overridden field", restoring.harness.writes.map((write) => write[0]), Object.keys(CONFIGURED));
+check("...clearing rather than restating values", restoring.harness.writes.every((write) => write[1] === null), true);
+restoringTree = restoringMount.draw();
+check("...and the page shows the defaults again", elements(restoringTree).some((node) => node.props["data-session-cost-override"] !== undefined), false);
+const restoredCurrency = elements(restoringTree).find((node) => node.type === "select" && node.props["aria-label"] === "默认币种符号");
+check("...including the default symbol", restoredCurrency.props.value, "$");
+
+// A namespace with no user layer has nothing to restore.
+const pristine = settingsHarness({ settingsValue: { ...CONFIGURED, prices: {} } });
+const pristineTree = mount(pristine.component, { ...pristine.face, t, view: "page" }).draw();
+check("a namespace with nothing overridden offers no restore", elements(pristineTree).find((node) => node.type === "button" && node.props.children === "恢复默认设置").props.disabled, true);
 
 // ── importing a configured model ─────────────────────────────────────────────
 const CATALOG = [

@@ -207,6 +207,22 @@ title line:
 | `displayCurrency` | The currency that figure is expressed in. Empty — the default — shows no figure at all. |
 | `fxRates` | Your own rates, e.g. `{"¥": 0.1467}`. Optional: they outrank every other source. |
 
+**Restore defaults** clears the whole user layer — price list, currencies, rate
+table and price overrides — returning the namespace to the Host's own defaults. It
+is disabled while nothing is overridden, and confirms first, because it discards
+the override table.
+
+Which currency the figure is expressed in — and the rates you enter — are read
+from the settings mirror **in the browser**, so switching either shows up at once.
+A projection is recomposed on session events alone and the registry offers no way
+to force one, so a target currency resolved on the Host would sit stale until the
+next event; the wire publishes the reference *data* and the browser resolves it.
+
+Price settings are different, and unavoidably so: which rate applies to a segment
+is the Host's fold, and that is the one place a session's cost is computed. Change
+the rate window or a price and it takes effect on that session's next event —
+still without a restart, and without a reload.
+
 Rates come from three places, in this order:
 
 1. **`fxRates`** — what you entered. Nothing outranks it, so a rate typed by hand
@@ -275,8 +291,8 @@ node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/fx.test.mjs           # 29 checks: the reference rates behind the converted figure
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 177 checks: the browser half, the tray and its settings page
-node test/config.test.mjs       # 81 checks: the schema, the live wiring and the billing card
+node test/bundle.test.mjs       # 190 checks: the browser half, the tray and its settings page
+node test/config.test.mjs       # 78 checks: the schema, the live wiring and the billing card
 ```
 
 Nothing is mocked away that matters: the suites import the real modules and

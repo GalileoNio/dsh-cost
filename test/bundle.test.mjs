@@ -493,12 +493,20 @@ check("the mark is drawn at exactly one weight", weights.length, 1);
 // faint or heavy beside the dock's own glyphs.
 check("the weight is inside the line-icon range", weights[0] >= 1 && weights[0] <= 1.5, true);
 check("the ring is the heavier half of the first version gone", weights[0] < 1.5, true);
-// Thinning the line must not shrink the mark: the outer edge stays where the
-// original 6.2-radius / 1.5-stroke ring already put it.
+// Thinning the line made the mark read smaller at the same diameter, so the ring
+// grew to buy that back. Measured off a screenshot, the dock's circle-check icon
+// spans ~13.1 of these units; the heavy first version spanned 13.9, and this one
+// spans 15 — the largest it can be with a clear margin inside the box.
 const ring = marked.find((child) => child.type === "circle");
 const outerEdge = Number(ring.props.r) + Number(ring.props.strokeWidth) / 2;
-check("the thinner ring keeps the icon's outer edge", Math.abs(outerEdge - 6.95) < 0.1, true);
-check("the ring stays inside the 16-unit box", outerEdge <= 8, true);
+check("the thinner ring is not smaller than the heavy one was", outerEdge > 6.95, true);
+check("the mark spans at most 15 of the 16 units", Number(ring.props.r) * 2 + Number(ring.props.strokeWidth) <= 15, true);
+check("leaving a margin inside the box", outerEdge < 8, true);
+// The ¥ has to grow with the ring, or the coin reads as a thick rim around a
+// shrunken glyph. Its widest span should track the ring's inner diameter.
+const glyphWidth = 2 * (10.15 - 8);
+check("the glyph scales with the ring rather than staying put", glyphWidth > 4, true);
+check("the glyph still fits well inside the ring", glyphWidth < Number(ring.props.r) - Number(ring.props.strokeWidth), true);
 
 // ── the settings seats ───────────────────────────────────────────────────────
 // The Plugins page renders no automatic schema form: it renders whatever the

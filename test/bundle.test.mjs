@@ -154,14 +154,24 @@ function elements(node, out = []) {
 const primitives = {
 	placed: [],
 	heightCaps: [],
+	heightSignals: [],
 	dismissals: 0,
+	/** Model a panel that has not been placed yet, i.e. still at the measure spot. */
+	unplaced: false,
 	useAnchoredPosition(options) {
 		primitives.placed.push(options);
+		if (primitives.unplaced) return null;
 		return options.open === true ? { left: 40, top: 100 } : null;
 	},
-	useAnchoredMaxHeight(ref, cap) {
+	useAnchoredMaxHeight(ref, cap, signal) {
 		primitives.heightCaps.push(cap);
-		return cap;
+		primitives.heightSignals.push(signal);
+		// The real hook measures the panel's *placed* bottom edge and re-measures
+		// when its signal changes. An unplaced panel sits at the hidden measure
+		// position, where that measurement collapses the tray to nothing — the bug
+		// these checks exist for, so the stub reproduces the contract rather than
+		// handing back the cap unconditionally.
+		return signal !== null && typeof signal === "object" && typeof signal.top === "number" ? cap : 0;
 	},
 	useDismissOnOutsidePointer() {
 		primitives.dismissals += 1;
@@ -559,6 +569,16 @@ const panel = resolve(open.props.children[1]);
 check("the panel is the shell's menu material", panel.props.className, "dshCost_panel");
 check("...applied through the shell's measure-then-place style", panel.props.style.maxHeight, 560);
 check("...and scrolls inside the fitted height", panel.props.style.overflowY, "auto");
+// Regression: the fit is measured from the panel's placed bottom edge, so it has
+// to be re-read once the placement exists. Passing the projected view instead
+// left the tray clamped to the measurement of its own unplaced frame, which is
+// why the total only appeared after a re-render or a scroll.
+check("the fit re-measures on placement", typeof primitives.heightSignals[primitives.heightSignals.length - 1]?.top, "number");
+primitives.unplaced = true;
+const measuringPanel = resolve(openRender(TWO_SEGMENTS).props.children[1]);
+check("an unplaced tray is not clamped", measuringPanel.props.style.maxHeight, undefined);
+check("...so the measure pass sees the natural size", measuringPanel.props.style.visibility, "hidden");
+primitives.unplaced = false;
 check("the title uses the shell's inline label wrapper", titleLabel.props.className, "dshCost_titleLabel");
 check("the tray surface takes the shell's menu background", /\.dshCost_panel\{[^}]*background:var\(--dsw-specific-menu\)/.test(sheet), true);
 check("...the shell's elevation", /\.dshCost_panel\{[^}]*box-shadow:var\(--dsw-elevation-prominent\)/.test(sheet), true);

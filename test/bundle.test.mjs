@@ -361,6 +361,12 @@ function resolve(node) {
 function panelChildren(tree) {
 	return flatten(resolve(tree.props.children[1]).props.children);
 }
+/** The converted summary figure the title carries, as rendered. */
+function titleValueOf(tree) {
+	const title = panelChildren(tree).find((child) => child.props.className === "dshCost_title");
+	const value = flatten([title.props.children]).find((child) => child.props.className === "dshCost_titleValue");
+	return value === undefined ? undefined : textOf(value);
+}
 /** The rendered segment sections. */
 function sectionsOf(tree) {
 	return flatten(panelChildren(tree).find((child) => child.props.className === "dshCost_sections").props.children);
@@ -562,6 +568,39 @@ check("...the shell's 16px padding", /\.dshCost_panel\{[^}]*padding:16px/.test(s
 check("...the shell's width band", /\.dshCost_panel\{[^}]*max-width:min\(440px/.test(sheet), true);
 check("the title rule is the shell's hairline", /\.dshCost_rule\{[^}]*border-top:\.5px solid var\(--dsw-alias-border-l2\)/.test(sheet), true);
 
+// ── the converted summary figure ─────────────────────────────────────────────
+// Only the policy rides the wire — target currency plus the rates the user
+// entered — and the multiplication happens here, where the totals already are.
+const TWO_CURRENCIES = {
+	groups: {
+		yuan: group("deepseek-official", "deepseek-flash", false, {
+			uncachedInputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, attempts: 1
+		}, price("¥", "Flash", { miss: 1, hit: 0, write: 0, out: 0 })),
+		dollar: group("anthropic", "claude-fable-5", false, {
+			uncachedInputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, attempts: 1
+		}, price("$", "Claude", { miss: 1, hit: 0, write: 0, out: 0 }))
+	},
+	unattributed: NO_UNATTRIBUTED,
+	conversion: { currency: "$", rates: { "¥": 0.15 } }
+};
+const mixed = openRender(TWO_CURRENCIES);
+check("the title carries the converted total", titleValueOf(mixed), "≈$1.15");
+checkJson("the totals still list every currency as billed", totalsOf(mixed), ["¥1.00", "$1.00"]);
+check("the converted figure is marked as a conversion", flatten([panelChildren(mixed).find((child) => child.props.className === "dshCost_title").props.children]).find((child) => child.props.className === "dshCost_titleValue").props.title, "按你输入的汇率折算");
+check("no conversion configured leaves today's tray untouched", titleValueOf(open), undefined);
+// The display currency rates itself, so one currency alone still converts.
+const SINGLE = { ...TWO_CURRENCIES, groups: { yuan: TWO_CURRENCIES.groups.yuan } };
+check("a single foreign currency still converts", titleValueOf(openRender(SINGLE)), "≈$0.150");
+// A currency the table does not rate withholds the figure rather than guessing.
+const UNRATED = { ...TWO_CURRENCIES, conversion: { currency: "$", rates: {} } };
+check("an unrated currency withholds the figure", titleValueOf(openRender(UNRATED)), undefined);
+checkJson("...while the totals stay complete", totalsOf(openRender(UNRATED)), ["¥1.00", "$1.00"]);
+const ZERO_RATE = { ...TWO_CURRENCIES, conversion: { currency: "$", rates: { "¥": 0 } } };
+check("a zero rate is not a rate", titleValueOf(openRender(ZERO_RATE)), undefined);
+// An incomplete session makes the converted figure a lower bound too.
+const MIXED_INCOMPLETE = { ...TWO_CURRENCIES, unattributed: { ...NO_UNATTRIBUTED, attempts: 2 } };
+check("an incomplete session marks the figure a lower bound", flatten([panelChildren(openRender(MIXED_INCOMPLETE)).find((child) => child.props.className === "dshCost_title").props.children]).find((child) => child.props.className === "dshCost_titleValue").props.title, "按你输入的汇率折算，且为下限");
+
 // ── the settings seats ───────────────────────────────────────────────────────
 // The Plugins page renders no automatic schema form: it renders whatever the
 // owning plugin claims for these seats, so a plugin with settings must claim
@@ -724,6 +763,50 @@ elements(settledMount.draw()).find((node) => node.props.className === "dshCost_b
 await flush();
 check("a resolved default is not restated on save", settled.harness.writes.length, 0);
 
+// ── the summary currency and its rate table ──────────────────────────────────
+const fx = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
+const fxMount = mount(fx.component, { ...fx.face, t, view: "page" });
+let fxTree = fxMount.draw();
+// The default-symbol select lists € too, so address this one by its label.
+const displaySelect = elements(fxTree).find((node) => node.type === "select" && node.props["aria-label"] === "折算显示币种");
+check("the page offers a summary currency", displaySelect !== undefined, true);
+check("...including no conversion at all", elements(displaySelect).some((child) => child.type === "option" && child.props.value === ""), true);
+check("no conversion is the resolved default", displaySelect.props.value, "");
+displaySelect.props.onChange({ target: { value: "€" } });
+fxTree = fxMount.draw();
+elements(fxTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
+await flush();
+checkJson("picking a summary currency writes it", fx.harness.writes.filter((write) => write[0] === "displayCurrency"), [["displayCurrency", "€"]]);
+
+// The rate table: rows are editable, and only usable rates are stored.
+const rates = settingsHarness({ settingsValue: CONFIGURED, catalog: [] });
+const ratesMount = mount(rates.component, { ...rates.face, t, view: "page" });
+let ratesTree = ratesMount.draw();
+check("no rate rows until one is added", elements(ratesTree).filter((node) => node.props["data-session-cost-rate"] !== undefined).length, 0);
+elements(ratesTree).find((node) => node.type === "button" && node.props.children === "添加汇率").props.onClick();
+ratesTree = ratesMount.draw();
+const rateRow = elements(ratesTree).find((node) => node.props["data-session-cost-rate"] !== undefined);
+check("adding a rate shows a row", rateRow !== undefined, true);
+// Re-draw between edits: a real keystroke re-renders, so the second field sees
+// the draft the first one produced.
+elements(rateRow).filter((node) => node.type === "input")[0].props.onChange({ target: { value: "¥" } });
+ratesTree = ratesMount.draw();
+const rateRowNext = elements(ratesTree).find((node) => node.props["data-session-cost-rate"] !== undefined);
+elements(rateRowNext).filter((node) => node.type === "input")[1].props.onChange({ target: { value: "0.1467" } });
+ratesTree = ratesMount.draw();
+elements(ratesTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
+await flush();
+checkJson("a filled rate row is stored as a number", rates.harness.writes.filter((write) => write[0] === "fxRates"), [["fxRates", { "¥": 0.1467 }]]);
+
+// A stored zero is the user's own value: an untouched save must not delete it
+// (the conversion is where an unusable rate is refused).
+const blank = settingsHarness({ settingsValue: { ...CONFIGURED, fxRates: { "¥": 0 } }, catalog: [] });
+const blankMount = mount(blank.component, { ...blank.face, t, view: "page" });
+check("a stored rate round-trips into the table", elements(blankMount.draw()).find((node) => node.props["data-session-cost-rate"] !== undefined).props["data-session-cost-rate"], "¥");
+elements(blankMount.draw()).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
+await flush();
+check("an untouched rate table is not restated", blank.harness.writes.length, 0);
+
 // ── importing a configured model ─────────────────────────────────────────────
 const CATALOG = [
 	{ id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-flash", name: "DeepSeek Flash" }, { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" }] },
@@ -752,6 +835,7 @@ check("the display name arrives with the route", elements(importedCards[1]).filt
 elements(importingTree).find((node) => node.props.className === "dshCost_button dshCost_primary").props.onClick();
 await flush();
 check("saving writes both rows", Object.keys(importing.harness.writes[0][1]).length, 2);
+
 
 // A catalog that cannot be read must leave manual entry working.
 const offline = settingsHarness({ settingsValue: CONFIGURED, catalogFails: true });
@@ -810,6 +894,24 @@ const chunkless = settingsHarness({ settingsValue: CONFIGURED, catalog: CATALOG,
 const chunklessTree = await importInto(chunkless);
 check("a deployment without the chunk loader still imports", elements(chunklessTree).filter((node) => node.props["data-session-cost-override"] !== undefined).length, 2);
 check("...and reports no pre-fill", elements(chunklessTree).find((node) => node.props["data-session-cost-prefill"] !== undefined)?.props["data-session-cost-prefill"], "unavailable");
+
+// A route the presets do not price is custom or self-hosted, and the provider id
+// is the only hint about what it bills in — still only a pre-fill.
+const CUSTOM_ONLY = [...CATALOG, { id: "dashscope", name: "DashScope", models: [{ id: "qwen-max", name: "Qwen Max" }] }];
+const suggesting = settingsHarness({ settingsValue: CONFIGURED, catalog: CUSTOM_ONLY, rates: RATES });
+const suggestingMount = mount(suggesting.component, { ...suggesting.face, t, view: "page" });
+suggestingMount.draw();
+await flush();
+let suggestingTree = suggestingMount.draw();
+const suggestingPicker = elements(suggestingTree).find((node) => node.type === "select" && elements(node).some((child) => child.type === "optgroup"));
+suggestingPicker.props.onChange({ target: { value: "dashscope/qwen-max" } });
+suggestingTree = suggestingMount.draw();
+elements(suggestingTree).find((node) => node.type === "button" && node.props.children === "导入").props.onClick();
+suggestingTree = suggestingMount.draw();
+const suggestedCard = elements(suggestingTree).find((node) => node.props["data-session-cost-override"] === "dashscope/qwen-max");
+check("a custom route gets a currency suggestion", elements(suggestedCard).filter((node) => node.type === "input")[1].props.value, "¥");
+const cataloguedCard = elements(prefillTree).find((node) => node.props["data-session-cost-override"] === "my-gateway/llama-4");
+check("a preset-priced route keeps its own symbol", elements(cataloguedCard).filter((node) => node.type === "input")[1].props.value, "$");
 
 // ── hidden cases ─────────────────────────────────────────────────────────────
 check("no projection renders nothing", render(undefined), null);

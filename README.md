@@ -179,11 +179,29 @@ prices:
     out: 0.4
 ```
 
-### Currencies are never converted
+### Currencies are never converted — unless you ask for one figure
 
-A session that used both a yuan-billed and a dollar-billed model shows two
-totals, `¥7.12 + $1.00`, and the dialog lists them separately. Inventing an
-exchange rate would put a number in the disclosure that no vendor ever billed.
+Every total stays in the currency its vendor billed: a session that used both a
+yuan-billed and a dollar-billed model shows `¥7.12 + $1.00`, and the dialog lists
+them separately. Segment rows are never converted.
+
+You can opt into a single figure, which sits at the right-hand end of the tray's
+title line:
+
+| Setting | Meaning |
+|---|---|
+| `displayCurrency` | The currency that figure is expressed in. Empty — the default — shows no figure at all. |
+| `fxRates` | One unit of the keyed currency is worth this many units of the summary currency, e.g. `{"¥": 0.1467}`. |
+
+Three rules keep that figure honest. The plugin never fetches a rate and never
+ships one, so the number is yours rather than a guess at today's market. A
+currency the table does not rate **withholds the figure entirely** rather than
+converting part of the total, which would be a number no rate produced. And the
+figure always carries `≈` and names the conversion on hover, so it can never be
+read as a billed amount — the per-currency totals beneath it stay the source of
+truth. Only the policy travels to the browser; the multiplication happens next to
+the totals that already exist, so there is exactly one implementation of what a
+session costs.
 
 That is also why the DeepSeek official routes carry a **price-list choice**
 rather than one price. The vendor publishes one list per platform — CNY on the
@@ -230,8 +248,8 @@ npm test
 node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 131 checks: the browser half, the tray and its settings page
-node test/config.test.mjs       # 65 checks: the schema, the live wiring and the billing card
+node test/bundle.test.mjs       # 151 checks: the browser half, the tray and its settings page
+node test/config.test.mjs       # 75 checks: the schema, the live wiring and the billing card
 ```
 
 Nothing is mocked away that matters: the suites import the real modules and

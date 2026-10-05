@@ -14,6 +14,9 @@ import { SESSION_COST_KEY, SESSION_COST_STATE_VERSION } from "../lib/projection.
 
 let pass = 0;
 let fail = 0;
+function checkJson(label, actual, expected) {
+	check(label, JSON.stringify(actual), JSON.stringify(expected));
+}
 function check(label, actual, expected) {
 	const ok = Object.is(actual, expected);
 	if (ok) pass += 1;
@@ -133,10 +136,12 @@ check("default enabled", defaults.enabled.get(), true);
 check("default period", defaults.period.get(), "auto");
 check("default currency", defaults.currency.get(), "$");
 check("the official card defaults to auto-detection", defaults.officialRates.get(), "auto");
+check("no summary currency is configured by default", defaults.displayCurrency.get(), "");
+checkJson("and therefore no rates", defaults.fxRates.get(), {});
 check("the override table starts empty", JSON.stringify(defaults.prices.get()), "{}");
 
 // ── every top-level field is volatile, or the settings page never sees it ────
-for (const field of ["enabled", "period", "currency", "officialRates", "prices"]) {
+for (const field of ["enabled", "period", "currency", "officialRates", "displayCurrency", "fxRates", "prices"]) {
 	check(`${field} resolves as a volatile handle`, typeof defaults[field]?.get, "function");
 }
 
@@ -160,6 +165,7 @@ rejects("no rates at all", { prices: { "gateway/model": { label: "x" } } });
 rejects("non-numeric rate", { prices: { "gateway/model": { miss: "1", hit: 1, write: 1, out: 1 } } });
 rejects("partial peak window", { prices: { "gateway/model": { miss: 1, hit: 1, write: 1, out: 1, peak: { miss: 2, hit: 2, write: 2 } } } });
 rejects("unknown period", { period: "bogus" });
+rejects("a non-numeric exchange rate", { fxRates: { "¥": "0.15" } });
 
 // Schemastery always materializes the nested `peak`, so all-zero rates are the
 // spelling of "no peak window" and the lookup is what drops it.
@@ -221,6 +227,15 @@ await Promise.resolve();
 const afterAnswer = Object.values(detected.wire.view(detectedState).groups)[0];
 check("...then the detected card takes over", afterAnswer.price.currency, OFFICIAL_CURRENCY_USD);
 check("...at the detected card's rate", afterAnswer.price.rates.miss, 0.15);
+
+// ── the conversion policy rides the wire only when it is configured ──────────
+check("no summary currency means no conversion on the wire", wireFor(Config({}), "deepseek-official", "deepseek-flash", USAGE).conversion, undefined);
+const converting = wireFor(Config({ displayCurrency: "$", fxRates: { "¥": 0.15 } }), "deepseek-official", "deepseek-flash", USAGE);
+checkJson("the wire carries the target currency and the user's rates", converting.conversion, { currency: "$", rates: { "¥": 0.15 } });
+check("...alongside the priced groups, not instead of them", converting.groups[Object.keys(converting.groups)[0]].price.currency, OFFICIAL_CURRENCY);
+const emptyRates = wireFor(Config({ displayCurrency: "€" }), "deepseek-official", "deepseek-flash", USAGE);
+checkJson("a target currency without rates still publishes the policy", emptyRates.conversion, { currency: "€", rates: {} });
+check("...so the browser withholds the figure rather than guessing", emptyRates.conversion.rates["¥"], undefined);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -479,9 +479,10 @@ check("the class sheet bounds a pill icon", /\.dshCost_pill svg[^{]*\{[^}]*width
 check("the class sheet bounds a panel icon", /\.dshCost_panel svg[^{]*\{[^}]*width:14px/.test(sheet), true);
 
 // ── the mark matches the weight of the icons it sits among ──────────────────
-// The dock's line icons read at roughly 1.25 units in a 16-unit box. The first
-// version drew a 1.5 ring around a 1.2 ¥: a heavy circle with a spindly glyph
-// inside, which is the mismatch this pins shut.
+// The dock's line icons read at about one unit in a 16-unit box, which is also
+// what the one stroked glyph the platform ships uses. The first version drew a
+// 1.5 ring around a 1.2 ¥: a heavy circle with a spindly glyph inside, which is
+// the mismatch this pins shut.
 const marked = flatten([pillIcon.props.children]);
 check("the icon is a line drawing, not a filled mark", pillIcon.props.fill, "none");
 check("the mark has parts", marked.length > 0, true);
@@ -492,6 +493,12 @@ check("the mark is drawn at exactly one weight", weights.length, 1);
 // faint or heavy beside the dock's own glyphs.
 check("the weight is inside the line-icon range", weights[0] >= 1 && weights[0] <= 1.5, true);
 check("the ring is the heavier half of the first version gone", weights[0] < 1.5, true);
+// Thinning the line must not shrink the mark: the outer edge stays where the
+// original 6.2-radius / 1.5-stroke ring already put it.
+const ring = marked.find((child) => child.type === "circle");
+const outerEdge = Number(ring.props.r) + Number(ring.props.strokeWidth) / 2;
+check("the thinner ring keeps the icon's outer edge", Math.abs(outerEdge - 6.95) < 0.1, true);
+check("the ring stays inside the 16-unit box", outerEdge <= 8, true);
 
 // ── the settings seats ───────────────────────────────────────────────────────
 // The Plugins page renders no automatic schema form: it renders whatever the

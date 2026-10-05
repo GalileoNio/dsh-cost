@@ -831,8 +831,8 @@ const HALVED = {
 checkJson("without the switch nothing is struck through", struckOf(openRender(HALVED, savingsOn(false))), []);
 checkJson("the list price is drawn struck through, then what was paid", struckOf(openRender(HALVED, savingsOn())), ["¥52.00", "¥52.00"]);
 const savingsTree = openRender(HALVED, savingsOn());
-check("...on the segment subtotal", textOf(elements(savingsTree).find((node) => node.props.className === "dshCost_subtotal")), "¥52.00¥6.40");
-check("...and on the total", textOf(elements(savingsTree).find((node) => node.props.className === "dshCost_amounts")), "¥52.00¥6.40");
+check("...on the segment subtotal", textOf(elements(savingsTree).find((node) => node.props.className === "dshCost_subtotal")), "¥52.00省 88%¥6.40");
+check("...and on the total", textOf(elements(savingsTree).find((node) => node.props.className === "dshCost_amounts")), "¥52.00省 88%¥6.40");
 // A price with no peak window still saves on the cache: every hit charged as a miss.
 const CACHED = {
 	groups: {
@@ -862,6 +862,11 @@ const subSettings = (savingsCache, savingsOffpeak) => new StubConfigForm({ displ
 checkJson("the cache sub-option alone still strikes through", struckOf(openRender(HALVED, subSettings(true, false))), ["¥26.00", "¥26.00"]);
 checkJson("the window sub-option alone does too", struckOf(openRender(HALVED, subSettings(false, true))), ["¥12.80", "¥12.80"]);
 checkJson("with both withheld there is nothing to strike", struckOf(openRender(HALVED, subSettings(false, false))), []);
+// The percentage is its own sub-option: with it off the two amounts sit together,
+// with it on the share of list price the discounts took sits between them.
+const noPercent = new StubConfigForm({ displayCurrency: "", fxRates: {}, showSavings: true, savingsCache: true, savingsOffpeak: true, savingsPercent: false });
+check("with the percentage off the amounts sit together", textOf(elements(openRender(HALVED, noPercent)).find((node) => node.props.className === "dshCost_amounts")), "¥52.00¥6.40");
+check("...and the percentage is drawn between them when it is on", textOf(elements(savingsTree).find((node) => node.props.className === "dshCost_savedPercent")), "省 88%");
 checkJson("and both on is the whole comparison", struckOf(openRender(HALVED, subSettings(true, true))), ["¥52.00", "¥52.00"]);
 
 
@@ -979,10 +984,14 @@ checkJson("toggling the label-marks switch writes only that field", savingsField
 const subField = settingsHarness({ settingsValue: { ...CONFIGURED, showSavings: true }, catalog: [] });
 const subMount = mount(subField.component, { ...subField.face, t, view: "page" });
 const subOptions = elements(subMount.draw()).filter((node) => node.props["data-session-cost-checkbox"] !== undefined);
-checkJson("the savings sub-options render beneath the switch", subOptions.map((node) => [node.props["aria-label"], node.props["data-session-cost-checkbox"]]), [["缓存命中", "true"], ["空闲时段", "true"]]);
+checkJson("the savings sub-options render beneath the switch", subOptions.map((node) => [node.props["aria-label"], node.props["data-session-cost-checkbox"]]), [["缓存命中", "true"], ["空闲时段", "true"], ["省钱百分比", "true"]]);
 subOptions[1].props.onClick();
 await flush();
 checkJson("toggling a sub-option writes only that field", subField.harness.writes, [["savingsOffpeak", false]]);
+const percentBox = elements(subMount.draw()).filter((node) => node.props["data-session-cost-checkbox"] !== undefined)[2];
+percentBox.props.onClick();
+await flush();
+checkJson("...and so does the percentage one", subField.harness.writes, [["savingsOffpeak", false], ["savingsPercent", false]]);
 
 // ── label marks ──────────────────────────────────────────────────────────────
 // A segment label is the catalog's own model name, so its leading words are the

@@ -754,17 +754,27 @@ const EURO_GROUP = group("acme", "eu-model", false, {
 }, price("€", "EU Model", { miss: 1, hit: 0, write: 0, out: 0 }));
 const TWO_SOURCES = { ...RATES_ONLY, groups: { ...RATES_ONLY.groups, euro: EURO_GROUP } };
 check("a mixed table names both", titleTip(openRender(TWO_SOURCES, moneyForm("$", { "¥": 0.5 }))), "按参考汇率（ECB 2026-10-02）与你输入的汇率折算");
-check("no summary currency configured leaves today's tray untouched", titleValueOf(openRender(RATES_ONLY, moneyForm("", {}))), undefined);
-check("...and no settings face at all does the same", titleValueOf(openRender(RATES_ONLY, undefined)), undefined);
+// With no summary currency the title still carries the session's cost: the billed
+// totals, which is also what the pill shows.
+check("without a summary currency the title shows the billed totals", titleValueOf(openRender(RATES_ONLY, moneyForm("", {}))), "¥1.00 + $1.00");
+check("...and names no conversion, because there was none", titleTip(openRender(RATES_ONLY, moneyForm("", {}))), undefined);
+check("...and the same with no settings face at all", titleValueOf(openRender(RATES_ONLY, undefined)), "¥1.00 + $1.00");
 // The target currency rates itself, so one currency alone still converts.
 const SINGLE_FX = { ...RATES_ONLY, groups: { yuan: RATES_ONLY.groups.yuan } };
 check("a single foreign currency still converts", titleValueOf(openRender(SINGLE_FX, moneyForm("$", {}))), "≈$0.149");
 // A currency no source can identify withholds the figure rather than guessing.
 const UNRATED = { ...RATES_ONLY, reference: { ...REFERENCE, symbols: { "€": "EUR", "$": "USD" } } };
-check("an unrated currency withholds the figure", titleValueOf(openRender(UNRATED, moneyForm("$", {}))), undefined);
+check("an unrated currency falls back to the billed totals", titleValueOf(openRender(UNRATED, moneyForm("$", {}))), "¥1.00 + $1.00");
 checkJson("...while the totals stay complete", totalsOf(openRender(UNRATED, moneyForm("$", {}))), ["¥1.00", "$1.00"]);
 checkJson("...and the tray names the rate it needs", notesOf(openRender(UNRATED, moneyForm("$", {}))), ["汇率表缺少 ¥ 的汇率，未显示折算合计。"]);
 checkJson("a computable figure needs no note", notesOf(mixed), []);
+// One value, two places: the pill and the title read the same function.
+const MONEY_OWN = moneyForm("$", { "¥": 0.5 });
+check("the pill shows the converted figure", labelOf(render(RATES_ONLY, MONEY_OWN)), "≈$1.50");
+check("...which is the value the title carries", labelOf(render(RATES_ONLY, MONEY_OWN)), titleValueOf(openRender(RATES_ONLY, MONEY_OWN)));
+check("...and the billed totals when nothing converts", labelOf(render(RATES_ONLY, undefined)), "¥1.00 + $1.00");
+check("...which the title carries too", labelOf(render(RATES_ONLY, undefined)), titleValueOf(openRender(RATES_ONLY, undefined)));
+check("an incomplete session marks the pill a lower bound", labelOf(render({ ...RATES_ONLY, unattributed: { ...NO_UNATTRIBUTED, attempts: 2 } }, undefined)), "≈¥1.00 + $1.00");
 check("a zero rate is not a rate, so the reference answers", titleValueOf(openRender(RATES_ONLY, moneyForm("$", { "¥": 0 }))), "≈$1.15");
 // An incomplete session makes the converted figure a lower bound too.
 const RATES_INCOMPLETE = { ...RATES_ONLY, unattributed: { ...NO_UNATTRIBUTED, attempts: 2 } };

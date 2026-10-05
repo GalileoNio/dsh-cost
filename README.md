@@ -212,7 +212,13 @@ table and price overrides — returning the namespace to the Host's own defaults
 is disabled while nothing is overridden, and confirms first, because it discards
 the override table.
 
-Which currency the figure is expressed in — and the rates you enter — are read
+The dock pill and the tray's title carry **one value**, from one function: the
+converted figure when a summary currency is configured, and the billed totals when
+it is not. So there is always a number to read next to "Session cost", and the two
+places never disagree. The itemised totals below the title stay per currency either
+way.
+
+Which currency that value is expressed in — and the rates you enter — are read
 from the settings mirror **in the browser**, so switching either shows up at once.
 A projection is recomposed on session events alone and the registry offers no way
 to force one, so a target currency resolved on the Host would sit stale until the
@@ -291,7 +297,7 @@ node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/fx.test.mjs           # 29 checks: the reference rates behind the converted figure
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 190 checks: the browser half, the tray and its settings page
+node test/bundle.test.mjs       # 196 checks: the browser half, the tray and its settings page
 node test/config.test.mjs       # 78 checks: the schema, the live wiring and the billing card
 ```
 

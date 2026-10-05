@@ -495,6 +495,10 @@ function titleValueOf(tree) {
 	const value = flatten([title.props.children]).find((child) => child.props.className === "dshCost_titleValue");
 	return value === undefined ? undefined : textOf(value);
 }
+/** The explanation the pill carries on hover, if any. */
+function pillHintOf(tree) {
+	return elements(tree).find((node) => node.props.className === "dshCost_pill").props.title;
+}
 /** The tooltip the converted figure carries. */
 function titleTip(tree) {
 	const title = panelChildren(tree).find((child) => child.props.className === "dshCost_title");
@@ -610,7 +614,10 @@ const WITH_UNATTRIBUTED = {
 	groups: TWO_SEGMENTS.groups,
 	unattributed: { uncachedInputTokens: 500, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, attempts: 3 }
 };
-check("unattributed attempts mark the amount a lower bound", labelOf(render(WITH_UNATTRIBUTED)), "≈¥7.12");
+// The glyph was removed as noise: the value reads plainly, and the fact that it
+// is not a vendor's own number lives in the hover title instead.
+check("unattributed attempts leave the amount unmarked", labelOf(render(WITH_UNATTRIBUTED)), "¥7.12");
+check("...and explain themselves on hover", pillHintOf(render(WITH_UNATTRIBUTED)), "本会话花费 ¥7.12 · 合计（下限）");
 checkJson("unattributed is disclosed with its request count", notesOf(openRender(WITH_UNATTRIBUTED))[0], "另有 3 次请求未记录模型，未计入。");
 checkJson("a lower-bound total says so", totalsOf(openRender(WITH_UNATTRIBUTED)), ["¥7.12"]);
 check("a lower-bound total is labelled so", totalLabelOf(openRender(WITH_UNATTRIBUTED)), "合计（下限）");
@@ -622,7 +629,8 @@ const WITH_UNPRICED = {
 	},
 	unattributed: NO_UNATTRIBUTED
 };
-check("an unpriced group marks the amount a lower bound", labelOf(render(WITH_UNPRICED)), "≈¥7.12");
+check("an unpriced group leaves the amount unmarked", labelOf(render(WITH_UNPRICED)), "¥7.12");
+check("...and explains itself on hover", pillHintOf(render(WITH_UNPRICED)), "本会话花费 ¥7.12 · 合计（下限）");
 check("an unpriced group is not a segment", segmentLabels(openRender(WITH_UNPRICED)).length, 2);
 checkJson("the unpriced route is named", notesOf(openRender(WITH_UNPRICED))[0], "some-provider/mystery-model 未定价，未计入。");
 
@@ -741,11 +749,11 @@ const RATES_ONLY = {
 // 1 ¥ is 1.1225/7.5259 = $0.149 by the reference table, and $0.50 by the rate the
 // user entered — far enough apart that precedence is visible in the figure itself.
 const mixed = openRender(RATES_ONLY, moneyForm("$", { "¥": 0.5 }));
-check("the title carries the converted total", titleValueOf(mixed), "≈$1.50");
+check("the title carries the converted total", titleValueOf(mixed), "$1.50");
 checkJson("the totals still list every currency as billed", totalsOf(mixed), ["¥1.00", "$1.00"]);
 check("the converted figure is marked as a conversion", titleTip(mixed), "按你输入的汇率折算");
 // The reference data answers when the user has entered nothing.
-check("a reference rate is used when the user entered none", titleValueOf(openRender(RATES_ONLY, moneyForm("$", {}))), "≈$1.15");
+check("a reference rate is used when the user entered none", titleValueOf(openRender(RATES_ONLY, moneyForm("$", {}))), "$1.15");
 check("...and is named with its date", titleTip(openRender(RATES_ONLY, moneyForm("$", {}))), "按参考汇率（ECB 2026-10-02）折算");
 check("a snapshot is named as built-in", titleTip(openRender({ ...RATES_ONLY, reference: SNAPSHOT_RATES }, moneyForm("$", {}))), "按内置参考汇率（2026-10-02）折算");
 // One currency the user rated by hand and one they did not: both show in the label.
@@ -761,7 +769,7 @@ check("...and names no conversion, because there was none", titleTip(openRender(
 check("...and the same with no settings face at all", titleValueOf(openRender(RATES_ONLY, undefined)), "¥1.00 + $1.00");
 // The target currency rates itself, so one currency alone still converts.
 const SINGLE_FX = { ...RATES_ONLY, groups: { yuan: RATES_ONLY.groups.yuan } };
-check("a single foreign currency still converts", titleValueOf(openRender(SINGLE_FX, moneyForm("$", {}))), "≈$0.149");
+check("a single foreign currency still converts", titleValueOf(openRender(SINGLE_FX, moneyForm("$", {}))), "$0.149");
 // A currency no source can identify withholds the figure rather than guessing.
 const UNRATED = { ...RATES_ONLY, reference: { ...REFERENCE, symbols: { "€": "EUR", "$": "USD" } } };
 check("an unrated currency falls back to the billed totals", titleValueOf(openRender(UNRATED, moneyForm("$", {}))), "¥1.00 + $1.00");
@@ -770,12 +778,15 @@ checkJson("...and the tray names the rate it needs", notesOf(openRender(UNRATED,
 checkJson("a computable figure needs no note", notesOf(mixed), []);
 // One value, two places: the pill and the title read the same function.
 const MONEY_OWN = moneyForm("$", { "¥": 0.5 });
-check("the pill shows the converted figure", labelOf(render(RATES_ONLY, MONEY_OWN)), "≈$1.50");
+check("the pill shows the converted figure", labelOf(render(RATES_ONLY, MONEY_OWN)), "$1.50");
 check("...which is the value the title carries", labelOf(render(RATES_ONLY, MONEY_OWN)), titleValueOf(openRender(RATES_ONLY, MONEY_OWN)));
 check("...and the billed totals when nothing converts", labelOf(render(RATES_ONLY, undefined)), "¥1.00 + $1.00");
 check("...which the title carries too", labelOf(render(RATES_ONLY, undefined)), titleValueOf(openRender(RATES_ONLY, undefined)));
-check("an incomplete session marks the pill a lower bound", labelOf(render({ ...RATES_ONLY, unattributed: { ...NO_UNATTRIBUTED, attempts: 2 } }, undefined)), "≈¥1.00 + $1.00");
-check("a zero rate is not a rate, so the reference answers", titleValueOf(openRender(RATES_ONLY, moneyForm("$", { "¥": 0 }))), "≈$1.15");
+check("an incomplete session leaves the pill unmarked", labelOf(render({ ...RATES_ONLY, unattributed: { ...NO_UNATTRIBUTED, attempts: 2 } }, undefined)), "¥1.00 + $1.00");
+check("...and explains itself on hover", pillHintOf(render({ ...RATES_ONLY, unattributed: { ...NO_UNATTRIBUTED, attempts: 2 } }, undefined)), "本会话花费 ¥1.00 + $1.00 · 合计（下限）");
+check("a converted figure explains which rates it used", pillHintOf(mixed), "本会话花费 $1.50 · 按你输入的汇率折算");
+check("an exact billed figure explains nothing", pillHintOf(render(RATES_ONLY, undefined)), "本会话花费 ¥1.00 + $1.00");
+check("a zero rate is not a rate, so the reference answers", titleValueOf(openRender(RATES_ONLY, moneyForm("$", { "¥": 0 }))), "$1.15");
 // An incomplete session makes the converted figure a lower bound too.
 const RATES_INCOMPLETE = { ...RATES_ONLY, unattributed: { ...NO_UNATTRIBUTED, attempts: 2 } };
 check("an incomplete session marks the figure a lower bound", titleTip(openRender(RATES_INCOMPLETE, moneyForm("$", { "¥": 0.5 }))), "按你输入的汇率折算，且为下限");
@@ -1220,7 +1231,7 @@ const ZERO_RATES = {
 	unattributed: NO_UNATTRIBUTED
 };
 check("all-zero rates yield a zero amount", labelOf(render(ZERO_RATES)), "$0");
-check("a zero amount is not marked a lower bound", labelOf(render(ZERO_RATES)).startsWith("≈"), false);
+check("a zero amount is not marked a lower bound", labelOf(render(ZERO_RATES)), "$0");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

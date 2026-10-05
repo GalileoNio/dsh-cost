@@ -244,7 +244,9 @@ number is the ECB's, and the snapshot carries `BUILTIN_AS_OF` with it. A currenc
 no source identifies — `kr` names three different crowns, and `₽` is unpublished —
 **withholds the figure entirely** rather than converting part of the total, which
 would be a number no rate produced; the tray then names the currency it could not
-rate. And the figure always carries `≈` and names its source on hover
+rate. And the figure names its source on hover (a glyph beside the number was
+tried and removed: it was noise on every reading, and the tray says 「合计（下限）」
+in words where the detail belongs)
 ("reference rates (ECB 2026-10-02)", "the rates you entered"), so it can never be
 read as a billed amount — the per-currency totals beneath it stay the source of
 truth. Only the policy travels to the browser; the multiplication happens next to
@@ -280,7 +282,8 @@ skip the read entirely.
   There is deliberately no holiday setting, and no second place that classifies a
   window, so there is nothing for such a setting to keep in step.
 - **Unattributed attempts and unpriced routes are disclosed, not hidden.** Either
-  makes the total a lower bound and the pill shows `≈`.
+  makes the total a lower bound: the tray's total reads 「合计（下限）」 and the pill
+  says so on hover.
 
 ## Verification
 
@@ -297,7 +300,7 @@ node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/fx.test.mjs           # 29 checks: the reference rates behind the converted figure
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 196 checks: the browser half, the tray and its settings page
+node test/bundle.test.mjs       # 201 checks: the browser half, the tray and its settings page
 node test/config.test.mjs       # 78 checks: the schema, the live wiring and the billing card
 ```
 

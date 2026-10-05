@@ -75,7 +75,9 @@ asserts that reconciliation against an independent reimplementation.
 one already-narrowed four-number rate set: the long-context tier when the
 vendor has one, otherwise the peak or base window the settings select. The
 browser multiplies and never chooses, so it cannot disagree with the Host about
-a price — and the plugin needs no price table client-side.
+a price. The only table the browser ever holds is the preset one the Host
+generates for the settings page, and that one seeds an edit — it never prices a
+displayed amount.
 
 ## Where prices come from
 
@@ -189,8 +191,8 @@ exchange rate would put a number in the disclosure that no vendor ever billed.
   are invisible here.
 - **No holiday calendar.** The log records no holiday data and a fold must be a
   pure function of the log, so a weekday statutory holiday is classified peak.
-  There is deliberately no holiday setting: it could only ever affect one of two
-  paths, and they must not disagree.
+  There is deliberately no holiday setting, and no second place that classifies a
+  window, so there is nothing for such a setting to keep in step.
 - **Unattributed attempts and unpriced routes are disclosed, not hidden.** Either
   makes the total a lower bound and the pill shows `≈`.
 
@@ -208,7 +210,7 @@ npm test
 node test/presets.test.mjs      # 49 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing
-node test/bundle.test.mjs       # 96 checks: the browser half and its settings page
+node test/bundle.test.mjs       # 108 checks: the browser half and its settings page
 node test/config.test.mjs       # 44 checks: the schema and the live wiring
 ```
 

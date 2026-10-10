@@ -11,6 +11,24 @@ actually served each request**.
 
 Clicking the pill opens the breakdown, one section per `(model, rate window)`.
 
+## What it looks like
+
+The pill sits in the Session's statistics strip, beside the counts the Harness
+already shows:
+
+![The cost pill in the composer statistics strip](docs/screenshots/pill.png)
+
+Clicking it opens the breakdown, one section per `(model, rate window)` — tokens by
+kind, the rate each was billed at, the list price struck through beside the saving
+when that is asked for, and the total:
+
+![The breakdown, one section per model and rate window](docs/screenshots/tray.png)
+
+Its settings are a card on the **Plugins** page: the price list, the timer windows,
+the symbol and the currency the summary converts into, and the savings display:
+
+![The plugin's settings page](docs/screenshots/settings.png)
+
 ## Install
 
 This is a **bundle**: installing it adds a Loader entry, and the entry is what

@@ -113,6 +113,13 @@ displayed amount.
 
 ## Where prices come from
 
+Both DeepSeek ways in — an API key and a signed-in account — are priced from the
+same published list. They are separate provider ids in the Harness
+(`deepseek-official` and `deepseek-account`), and a Session names whichever served
+each request, so a price that only covered one of them would leave an
+account-login Session reading as having no cost data.
+
+
 **Presets, derived from the Harness's own catalog.** `@earendil-works/pi-ai` —
 the catalog `dsh-llm-pi-ai` serves from — ships **41 providers and ~1495
 models**, each with `cost: { input, output, cacheRead, cacheWrite }` in USD per
@@ -372,7 +379,7 @@ npm test
 `npm test` runs all six, and each also runs alone:
 
 ```
-node test/presets.test.mjs      # 64 checks: catalog derivation and precedence
+node test/presets.test.mjs      # 71 checks: catalog derivation and precedence
 node test/rates-chunk.test.mjs  # 34 checks: the preset table the Host hands the page
 node test/fx.test.mjs           # 32 checks: the reference rates behind the converted figure
 node test/projection.test.mjs   # 61 checks: the fold and price narrowing

@@ -157,5 +157,17 @@ const emptyCatalog = createPriceLookup({ catalog: {} });
 check("an empty catalog leaves only the official routes", emptyCatalog("anthropic", "claude-fable-5"), null);
 check("an empty catalog still prices the official routes", emptyCatalog("deepseek-official", "deepseek-v4-pro").base.out, 13.5);
 
+// Both DeepSeek auth paths must price the same Session identically: an API key
+// reaches the vendor through `deepseek-official`, a signed-in account through
+// `deepseek-account`, and a Session names whichever served the request in its route.
+const ACCOUNT = "deepseek-account";
+check("an account-login route is priced", lookup(ACCOUNT, "deepseek-flash").base.miss, 1);
+check("...identically to the API-key route", lookup(ACCOUNT, "deepseek-flash").base.miss, lookup("deepseek-official", "deepseek-flash").base.miss);
+check("...in the domestic card", cny(ACCOUNT, FLASH).currency, OFFICIAL_CURRENCY);
+check("...and in the international one", usd(ACCOUNT, FLASH).currency, OFFICIAL_CURRENCY_USD);
+check("...with the peak window intact", cny(ACCOUNT, FLASH).peak.out, 8);
+check("a second official model travels too", lookup(ACCOUNT, "deepseek-v4-pro").base.miss, 4.5);
+check("an account model the table omits falls through to the catalog twin", aliased(ACCOUNT, "deepseek-next").base.miss, 9);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
